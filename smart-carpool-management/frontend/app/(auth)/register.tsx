@@ -1,470 +1,336 @@
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Stack } from 'expo-router';
-import { router } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+// app/(auth)/register.tsx (full updated file)
+import { useState } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   TextInput,
   TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  ScrollView,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
 } from 'react-native';
-import { useState, useRef, forwardRef, useImperativeHandle } from 'react';
-import Animated, { FadeInDown, SlideInDown } from 'react-native-reanimated';
-import { BlurView } from 'expo-blur';
-import Modal from 'react-native-modal';
-import { supabase } from '../../lib/supabase';
- // ← ADD THIS IMPORT
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { supabase } from '@/lib/supabase';
+import { router } from 'expo-router';
 
-const CustomAlert = forwardRef((props, ref) => {
-  const [visible, setVisible] = useState(false);
-  const [title, setTitle] = useState('');
-  const [message, setMessage] = useState('');
-  const [type, setType] = useState('info');
-
-  const show = (t, m, alertType = 'info') => {
-    setTitle(t);
-    setMessage(m);
-    setType(alertType);
-    setVisible(true);
-  };
-
-  const hide = () => setVisible(false);
-
-  useImperativeHandle(ref, () => ({ show, hide }));
-
-  const getColor = () => {
-    switch (type) {
-      case 'success': return '#10B981';
-      case 'error':   return '#EF4444';
-      default:        return '#7C3AED';
-    }
-  };
-
-  return (
-    <Modal
-      isVisible={visible}
-      onBackdropPress={hide}
-      onBackButtonPress={hide}
-      animationIn="fadeInUp"
-      animationOut="fadeOutDown"
-      backdropOpacity={0.7}
-      useNativeDriver
-      style={styles.modal}
-    >
-   <Stack.Screen
-  options={{
-    headerShown: false,
-  }}
-/>
-      <BlurView
-        intensity={Platform.OS === 'ios' ? 80 : 120}
-        tint="dark"
-        style={styles.alertContainer}
-      >
-        <View style={styles.alertContent}>
-          <Text style={[styles.alertTitle, { color: getColor() }]}>
-            {title}
-          </Text>
-          <Text style={styles.alertMessage}>{message}</Text>
-
-          <TouchableOpacity
-            style={[styles.alertButton, { backgroundColor: getColor() }]}
-            onPress={hide}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.alertButtonText}>OK</Text>
-          </TouchableOpacity>
-        </View>
-      </BlurView>
-    </Modal>
-  );
-});
-
-// ────────────────────────────────────────────────
-// Main Register Screen
-// ────────────────────────────────────────────────
 export default function Register() {
-  const [role, setRole] = useState<'driver' | 'rider'>('rider');
-
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
+  const [role, setRole] = useState('rider'); // 'rider' or 'driver'
+  const [loading, setLoading] = useState(false);
 
-  const [license, setLicense] = useState('');
+  // Driver fields
   const [vehicleModel, setVehicleModel] = useState('');
   const [vehicleNumber, setVehicleNumber] = useState('');
   const [capacity, setCapacity] = useState('');
 
-  const alertRef = useRef(null);
-
-  const showAlert = (title, message, type = 'info') => {
-    alertRef.current?.show(title, message, type);
-  };
-
   const handleRegister = async () => {
-    if (!name || !email || !password || !phone) {
-      showAlert('Missing Fields', 'Please fill all required fields', 'error');
+    if (!name.trim() || !email.trim() || !password || !phone.trim()) {
+      alert('Please fill all required fields');
       return;
     }
 
+    if (role === 'driver') {
+      if (!vehicleModel.trim() || !vehicleNumber.trim() || !capacity.trim()) {
+        alert('Please fill all vehicle details');
+        return;
+      }
+      const seating = Number(capacity);
+      if (isNaN(seating) || seating < 1) {
+        alert('Seating capacity must be a valid number ≥ 1');
+        return;
+      }
+    }
+
+    setLoading(true);
+
     try {
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email,
+      const { data: { user }, error: signUpError } = await supabase.auth.signUp({
+        email: email.trim(),
         password,
       });
 
-      if (authError) {
-        showAlert('Authentication Error', authError.message, 'error');
+      if (signUpError || !user) {
+        alert(signUpError?.message || 'Sign up failed');
+        setLoading(false);
         return;
       }
 
-      const userId = authData.user?.id;
-      if (!userId) {
-        showAlert('Error', 'User ID not returned', 'error');
-        return;
-      }
-
-      let successMessage = '';
+      const userId = user.id;
 
       if (role === 'driver') {
-        if (!license || !vehicleModel || !vehicleNumber || !capacity) {
-          showAlert('Missing Fields', 'Please fill all driver fields', 'error');
-          return;
-        }
-
-        const seating = Number(capacity);
-        if (isNaN(seating)) {
-          showAlert('Invalid Input', 'Seating capacity must be a number', 'error');
-          return;
-        }
-
-        const { error: driverError } = await supabase.from('drivers').insert({
+        // Driver profile
+        const { error: driverErr } = await supabase.from('drivers').insert({
           driver_id: userId,
-          name,
-          email,
-          phone,
-          license_number: license,
+          name: name.trim(),
+          email: email.trim(),
+          phone: phone.trim(),
         });
 
-        if (driverError) {
-          console.log('Driver Insert Error:', driverError);
-          if (driverError.code === '23505' || driverError.message?.includes('duplicate')) {
-            showAlert('Already Registered', 'This email is already in use. Try logging in.', 'error');
-          } else {
-            showAlert('Driver Registration Failed', driverError.message, 'error');
-          }
-          return;
-        }
+        if (driverErr) throw driverErr;
 
-        const { error: vehicleError } = await supabase.from('vehicles').insert({
+        // Vehicle
+        const { error: vehicleErr } = await supabase.from('vehicles').insert({
           driver_id: userId,
-          vehicle_model: vehicleModel,
-          vehicle_number: vehicleNumber,
-          seating_capacity: seating,
+          vehicle_model: vehicleModel.trim(),
+          vehicle_number: vehicleNumber.trim().toUpperCase(),
+          seating_capacity: Number(capacity),
         });
 
-        if (vehicleError) {
-          console.log('Vehicle Insert Error:', vehicleError);
-          showAlert('Vehicle Registration Failed', vehicleError.message, 'error');
-          return;
-        }
-
-        successMessage = 'Driver registered successfully!\nPlease verify your email before logging in.';
+        if (vehicleErr) throw vehicleErr;
       } else {
-        const { error } = await supabase.from('riders').insert({
+        // Rider profile
+        const { error: riderErr } = await supabase.from('riders').insert({
           rider_id: userId,
-          name,
-          email,
-          phone,
+          name: name.trim(),
+          email: email.trim(),
+          phone: phone.trim(),
         });
 
-        if (error) {
-          console.log('Rider Insert Error:', error);
-          if (error.code === '23505' || error.message?.includes('duplicate')) {
-            showAlert('Already Registered', 'This email is already in use. Try logging in.', 'error');
-          } else {
-            showAlert('Registration Failed', error.message, 'error');
-          }
-          return;
-        }
-
-        successMessage = 'Registration successful!\nPlease verify your email before logging in.';
+        if (riderErr) throw riderErr;
       }
 
-      showAlert('Success', successMessage, 'success');
-
-      // REDIRECT TO LOGIN AFTER SUCCESS (small delay so user sees alert)
-      setTimeout(() => {
-        router.replace('/');  // ← CHANGE TO YOUR ACTUAL LOGIN ROUTE if different (e.g. '/(auth)/login')
-      }, 1400); // 1.8 seconds — adjust as needed
-
+      alert('Registration successful! Please check your email to verify.');
+      router.replace('/(auth)/login');
     } catch (err) {
-      console.log('Unexpected Error:', err);
-      showAlert('Unexpected Error', 'Something went wrong. Please try again.', 'error');
+      console.error('Registration error:', err);
+      alert(err.message || 'Something went wrong');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={{ flex: 1 }}
+        style={styles.keyboardAvoid}
       >
-        <ScrollView contentContainerStyle={styles.container}>
-          {/* Title + Subtitle aligned top-left */}
-          <Animated.View entering={FadeInDown.duration(700)}>
-  <View style={styles.customHeader}>
-    <TouchableOpacity onPress={() => router.back()}>
-      <Ionicons name="arrow-back" size={24} color="#F8FAFC" />
-    </TouchableOpacity>
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <Text style={styles.title}>Register</Text>
 
-    <View style={styles.headerTextContainer}>
-      <Text style={styles.title}>Create Account</Text>
-      <Text style={styles.subtitle}>
-        Register as {role === 'driver' ? 'Driver' : 'Rider'}
-      </Text>
-    </View>
+          {/* Common fields */}
+          <TextInput
+            style={styles.input}
+            placeholder="Full Name"
+            value={name}
+            onChangeText={setName}
+            placeholderTextColor="#94A3B8"
+            autoCapitalize="words"
+          />
 
-    <View style={{ width: 24 }} />
-  </View>
-</Animated.View>
+          <TextInput
+            style={styles.input}
+            placeholder="Email"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            placeholderTextColor="#94A3B8"
+          />
 
-          <View style={styles.toggleContainer}>
+          <TextInput
+            style={styles.input}
+            placeholder="Password"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            placeholderTextColor="#94A3B8"
+          />
+
+          <TextInput
+            style={styles.input}
+            placeholder="Phone Number"
+            value={phone}
+            onChangeText={setPhone}
+            keyboardType="phone-pad"
+            placeholderTextColor="#94A3B8"
+          />
+
+          {/* Role selection */}
+          <View style={styles.roleContainer}>
             <TouchableOpacity
-              style={[styles.toggleButton, role === 'rider' && styles.toggleActive]}
+              style={[
+                styles.roleButton,
+                role === 'rider' && styles.roleButtonActive,
+              ]}
               onPress={() => setRole('rider')}
             >
-              <Text style={[styles.toggleText, role === 'rider' && styles.toggleTextActive]}>
+              <Text style={[
+                styles.roleText,
+                role === 'rider' && styles.roleTextActive,
+              ]}>
                 Rider
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.toggleButton, role === 'driver' && styles.toggleActive]}
+              style={[
+                styles.roleButton,
+                role === 'driver' && styles.roleButtonActive,
+              ]}
               onPress={() => setRole('driver')}
             >
-              <Text style={[styles.toggleText, role === 'driver' && styles.toggleTextActive]}>
+              <Text style={[
+                styles.roleText,
+                role === 'driver' && styles.roleTextActive,
+              ]}>
                 Driver
               </Text>
             </TouchableOpacity>
           </View>
 
-          <Animated.View
-            entering={SlideInDown.duration(800).delay(200)}
-            style={styles.card}
-          >
-            <BlurView
-              intensity={Platform.OS === 'ios' ? 70 : 110}
-              tint="dark"
-              style={StyleSheet.absoluteFill}
-            />
-
-            <View style={styles.form}>
+          {/* Driver fields - shown conditionally */}
+          {role === 'driver' && (
+            <View style={styles.driverFields}>
               <TextInput
-                placeholder="Full Name"
                 style={styles.input}
-                value={name}
-                onChangeText={setName}
-                placeholderTextColor="#94A3B8"
-              />
-              <TextInput
-                placeholder="Email"
-                style={styles.input}
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                placeholderTextColor="#94A3B8"
-              />
-              <TextInput
-                placeholder="Password"
-                secureTextEntry
-                style={styles.input}
-                value={password}
-                onChangeText={setPassword}
-                placeholderTextColor="#94A3B8"
-              />
-              <TextInput
-                placeholder="Phone Number"
-                style={styles.input}
-                value={phone}
-                onChangeText={setPhone}
-                keyboardType="phone-pad"
+                placeholder="Vehicle Model (e.g. Swift Dzire)"
+                value={vehicleModel}
+                onChangeText={setVehicleModel}
                 placeholderTextColor="#94A3B8"
               />
 
-              {role === 'driver' && (
-                <>
-                  <TextInput
-                    placeholder="License Number"
-                    style={styles.input}
-                    value={license}
-                    onChangeText={setLicense}
-                    placeholderTextColor="#94A3B8"
-                  />
-                  <TextInput
-                    placeholder="Vehicle Model"
-                    style={styles.input}
-                    value={vehicleModel}
-                    onChangeText={setVehicleModel}
-                    placeholderTextColor="#94A3B8"
-                  />
-                  <TextInput
-                    placeholder="Vehicle Number"
-                    style={styles.input}
-                    value={vehicleNumber}
-                    onChangeText={setVehicleNumber}
-                    placeholderTextColor="#94A3B8"
-                  />
-                  <TextInput
-                    placeholder="Seating Capacity"
-                    style={styles.input}
-                    keyboardType="numeric"
-                    value={capacity}
-                    onChangeText={setCapacity}
-                    placeholderTextColor="#94A3B8"
-                  />
-                </>
-              )}
+              <TextInput
+                style={styles.input}
+                placeholder="Vehicle Number (e.g. KL07 AB 1234)"
+                value={vehicleNumber}
+                onChangeText={setVehicleNumber}
+                autoCapitalize="characters"
+                placeholderTextColor="#94A3B8"
+              />
 
-              <TouchableOpacity style={styles.button} onPress={handleRegister}>
-                <Text style={styles.buttonText}>
-                  Register as {role === 'driver' ? 'Driver' : 'Rider'}
-                </Text>
-              </TouchableOpacity>
+              <TextInput
+                style={styles.input}
+                placeholder="Seating Capacity"
+                value={capacity}
+                onChangeText={setCapacity}
+                keyboardType="number-pad"
+                placeholderTextColor="#94A3B8"
+              />
             </View>
-          </Animated.View>
+          )}
+
+          {/* Register button */}
+          <TouchableOpacity
+            style={[styles.registerButton, loading && styles.buttonDisabled]}
+            onPress={handleRegister}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={styles.registerButtonText}>Register</Text>
+            )}
+          </TouchableOpacity>
+
+          {/* Login link */}
+          <TouchableOpacity
+            style={styles.loginLinkContainer}
+            onPress={() => router.replace('/(auth)/login')}
+          >
+            <Text style={styles.loginLinkText}>
+              Already have an account? <Text style={styles.loginLinkBold}>Login</Text>
+            </Text>
+          </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
-
-      <CustomAlert ref={alertRef} />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#0B1120' },
-  container: { paddingHorizontal: 24, paddingVertical: 40 },
-
-  // New: Container for top-left alignment
-  headerContainer: {
-    alignItems: 'flex-start', // ← left align
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#0B1120',
   },
-
-  
-
-  toggleContainer: {
+  keyboardAvoid: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingTop: 40,
+    paddingBottom: 40,
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#F8FAFC',
+    textAlign: 'center',
+    marginBottom: 48,
+  },
+  input: {
+    backgroundColor: '#1E293B',
+    color: '#F8FAFC',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    fontSize: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.3)',
+  },
+  roleContainer: {
     flexDirection: 'row',
     backgroundColor: '#1E293B',
-    borderRadius: 20,
-    marginBottom: 25,
-    padding: 4,
-  },
-  customHeader: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  marginBottom: 20,
-},
-
-headerTextContainer: {
-  alignItems: 'center',
-},
-
-title: {
-  fontSize: 26,
-  fontWeight: '800',
-  color: '#F8FAFC',
-},
-
-subtitle: {
-  color: '#94A3B8',
-  marginTop: 4,
-},
-  toggleButton: { flex: 1, paddingVertical: 12, borderRadius: 16, alignItems: 'center' },
-  toggleActive: { backgroundColor: '#7C3AED' },
-  toggleText: { color: '#94A3B8', fontWeight: '600', fontSize: 16 },
-  toggleTextActive: { color: '#FFFFFF' },
-
-  card: {
-    borderRadius: 24,
-    overflow: 'hidden',
-    backgroundColor: 'rgba(30, 41, 59, 0.55)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  form: { padding: 28 },
-  input: {
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
-    color: '#F1F5F9',
     borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    fontSize: 15,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.2)',
-  },
-  button: {
-    backgroundColor: '#7C3AED',
-    paddingVertical: 16,
-    borderRadius: 16,
-    alignItems: 'center',
-    marginTop: 10,
-    shadowColor: '#7C3AED',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.45,
-    shadowRadius: 14,
-    elevation: 8,
-  },
-  buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
-
-  // Alert styles (unchanged)
-  modal: { justifyContent: 'center', margin: 0 },
-  alertContainer: {
-    borderRadius: 24,
-    overflow: 'hidden',
-    marginHorizontal: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  alertContent: {
-    padding: 32,
-    alignItems: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.9)',
-  },
-  alertTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 12,
-  },
-  alertMessage: {
-    fontSize: 16,
-    color: '#D1D5DB',
-    textAlign: 'center',
+    padding: 6,
     marginBottom: 28,
-    lineHeight: 24,
   },
-  alertButton: {
+  roleButton: {
+    flex: 1,
     paddingVertical: 14,
-    paddingHorizontal: 48,
-    borderRadius: 16,
-    minWidth: 140,
+    borderRadius: 12,
     alignItems: 'center',
-    shadowColor: '#000',
+  },
+  roleButtonActive: {
+    backgroundColor: '#7C3AED',
+  },
+  roleText: {
+    color: '#94A3B8',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  roleTextActive: {
+    color: '#FFFFFF',
+  },
+  driverFields: {
+    marginBottom: 28,
+  },
+  registerButton: {
+    backgroundColor: '#7C3AED',
+    paddingVertical: 18,
+    borderRadius: 16,
+    alignItems: 'center',
+    marginBottom: 24,
+    shadowColor: '#7C3AED',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.4,
     shadowRadius: 8,
     elevation: 6,
   },
-  alertButtonText: {
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  registerButtonText: {
     color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  loginLinkContainer: {
+    alignItems: 'center',
+  },
+  loginLinkText: {
+    color: '#94A3B8',
     fontSize: 16,
+  },
+  loginLinkBold: {
+    color: '#7C3AED',
     fontWeight: '700',
   },
 });

@@ -8,6 +8,7 @@ import {
   Platform,
   ActivityIndicator,
   Dimensions,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Animated, { FadeInDown } from "react-native-reanimated";
@@ -53,8 +54,8 @@ const CustomAlert = forwardRef((props, ref) => {
   const getColor = () => {
     switch (type) {
       case "success": return "#10B981";
-      case "error": return "#EF4444";
-      default: return "#7C3AED";
+      case "error":   return "#EF4444";
+      default:        return "#7C3AED";
     }
   };
 
@@ -111,11 +112,7 @@ export default function CreateRequest() {
   const alertRef = useRef(null);
 
   const showAlert = (title: string, message: string, type = "info") => {
-    if (alertRef.current) {
-      alertRef.current.show(title, message, type);
-    } else {
-      Alert.alert(title, message);
-    }
+    alertRef.current?.show(title, message, type);
   };
 
   useEffect(() => {
@@ -129,7 +126,7 @@ export default function CreateRequest() {
           router.replace("/(auth)/login");
         }
       } catch (err) {
-        console.error("Session error:", err);
+        console.error("Session load error:", err);
         showAlert("Error", "Could not verify login status", "error");
       } finally {
         setAuthLoading(false);
@@ -172,8 +169,8 @@ export default function CreateRequest() {
     const R = 6371;
     const dLat = (c2.lat - c1.lat) * Math.PI / 180;
     const dLon = (c2.lon - c1.lon) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) ** 2 + Math.cos(c1.lat * Math.PI / 180) * Math.cos(c2.lat * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const a = Math.sin(dLat/2)**2 + Math.cos(c1.lat * Math.PI/180) * Math.cos(c2.lat * Math.PI/180) * Math.sin(dLon/2)**2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     return R * c;
   };
 
@@ -196,7 +193,7 @@ export default function CreateRequest() {
       setPickupMarker({ latitude: pickupCoord.lat, longitude: pickupCoord.lon });
       setDestMarker({ latitude: destCoord.lat, longitude: destCoord.lon });
 
-      let distanceKm = 12; // fallback
+      let distanceKm = 12;
 
       try {
         const url = `http://router.project-osrm.org/route/v1/driving/${pickupCoord.lon},${pickupCoord.lat};${destCoord.lon},${destCoord.lat}?overview=full&geometries=geojson`;
@@ -252,20 +249,39 @@ export default function CreateRequest() {
     setLoading(true);
 
     try {
-      const { error } = await supabase.from("ride_requests").insert({
-        rider_id: userId,
-        pickup_location: pickupLocation.trim(),
-        destination: destination.trim(),
-        seats_required: seatsNum,
-        request_status: "pending",
-        // ride_id defaults to NULL
-      });
+      // Insert request with auto-generated ride_date (today's date)
+      const { data: request, error } = await supabase
+        .from("ride_requests")
+        .insert({
+          rider_id: userId,
+          pickup_location: pickupLocation.trim(),
+          destination: destination.trim(),
+          seats_required: seatsNum,
+          request_status: "pending",
+          ride_date: new Date().toISOString().split("T")[0],  // ← Auto system date (YYYY-MM-DD)
+        })
+        .select("request_id")
+        .single();
 
       if (error) throw error;
 
-      showAlert("Success", "Request created!\nDrivers will be notified.", "success");
+      showAlert("Success", "Request created!\nRedirecting to payment...", "success");
 
-      // Reset form
+      // In handleSubmit — replace the router.push block with this:
+Alert.alert(
+  "Success",
+  "Ride request created!\nWaiting for drivers to accept your request.",
+  [
+    {
+      text: "OK",
+      onPress: () => {
+        router.replace('/(tabs)/rider-home');
+      },
+    },
+  ]
+);
+
+      // Reset form after navigation
       setPickupLocation("");
       setDestination("");
       setSeats("");
@@ -372,9 +388,7 @@ export default function CreateRequest() {
               )}
             </TouchableOpacity>
 
-            {estimatedFare > 0 && (
-              <Text style={styles.fare}>Estimated Fare: ₹{estimatedFare}</Text>
-            )}
+            {estimatedFare > 0 && <Text style={styles.fare}>Estimated Fare: ₹{estimatedFare}</Text>}
 
             <TouchableOpacity
               style={[styles.button, loading && styles.buttonDisabled]}
