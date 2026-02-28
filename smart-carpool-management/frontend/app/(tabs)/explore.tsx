@@ -1,112 +1,215 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+// app/(tabs)/explore.tsx
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 
-import { Collapsible } from '@/components/ui/collapsible';
-import { ExternalLink } from '@/components/external-link';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Fonts } from '@/constants/theme';
-
-export default function TabTwoScreen() {
+export default function ExploreScreen() {
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#D0D0D0', dark: '#353636' }}
-      headerImage={
-        <IconSymbol
-          size={310}
-          color="#808080"
-          name="chevron.left.forwardslash.chevron.right"
-          style={styles.headerImage}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText
-          type="title"
-          style={{
-            fontFamily: Fonts.rounded,
-          }}>
-          Explore
-        </ThemedText>
-      </ThemedView>
-      <ThemedText>This app includes example code to help you get started.</ThemedText>
-      <Collapsible title="File-based routing">
-        <ThemedText>
-          This app has two screens:{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">app/(tabs)/explore.tsx</ThemedText>
-        </ThemedText>
-        <ThemedText>
-          The layout file in <ThemedText type="defaultSemiBold">app/(tabs)/_layout.tsx</ThemedText>{' '}
-          sets up the tab navigator.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/router/introduction">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Android, iOS, and web support">
-        <ThemedText>
-          You can open this project on Android, iOS, and the web. To open the web version, press{' '}
-          <ThemedText type="defaultSemiBold">w</ThemedText> in the terminal running this project.
-        </ThemedText>
-      </Collapsible>
-      <Collapsible title="Images">
-        <ThemedText>
-          For static images, you can use the <ThemedText type="defaultSemiBold">@2x</ThemedText> and{' '}
-          <ThemedText type="defaultSemiBold">@3x</ThemedText> suffixes to provide files for
-          different screen densities
-        </ThemedText>
-        <Image
-          source={require('@/assets/images/react-logo.png')}
-          style={{ width: 100, height: 100, alignSelf: 'center' }}
-        />
-        <ExternalLink href="https://reactnative.dev/docs/images">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Light and dark mode components">
-        <ThemedText>
-          This template has light and dark mode support. The{' '}
-          <ThemedText type="defaultSemiBold">useColorScheme()</ThemedText> hook lets you inspect
-          what the user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-        </ThemedText>
-        <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-          <ThemedText type="link">Learn more</ThemedText>
-        </ExternalLink>
-      </Collapsible>
-      <Collapsible title="Animations">
-        <ThemedText>
-          This template includes an example of an animated component. The{' '}
-          <ThemedText type="defaultSemiBold">components/HelloWave.tsx</ThemedText> component uses
-          the powerful{' '}
-          <ThemedText type="defaultSemiBold" style={{ fontFamily: Fonts.mono }}>
-            react-native-reanimated
-          </ThemedText>{' '}
-          library to create a waving hand animation.
-        </ThemedText>
-        {Platform.select({
-          ios: (
-            <ThemedText>
-              The <ThemedText type="defaultSemiBold">components/ParallaxScrollView.tsx</ThemedText>{' '}
-              component provides a parallax effect for the header image.
-            </ThemedText>
-          ),
-        })}
-      </Collapsible>
-    </ParallaxScrollView>
+    <SafeAreaView style={styles.safe}>
+      <ScrollView contentContainerStyle={styles.container}>
+        {/* Header */}
+        <Text style={styles.title}>Explore Smart Carpool</Text>
+        <Text style={styles.subtitle}>
+          Share rides, save money, reduce traffic — all in Kerala
+        </Text>
+
+        {/* How It Works */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>How It Works</Text>
+
+          <View style={styles.step}>
+            <View style={styles.stepIconContainer}>
+              <Ionicons name="location-outline" size={28} color="#7C3AED" />
+            </View>
+            <View style={styles.stepContent}>
+              <Text style={styles.stepTitle}>1. Create a Request</Text>
+              <Text style={styles.stepDesc}>
+                Enter your pickup, destination, date, and seats needed.
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.step}>
+            <View style={styles.stepIconContainer}>
+              <Ionicons name="people-outline" size={28} color="#7C3AED" />
+            </View>
+            <View style={styles.stepContent}>
+              <Text style={styles.stepTitle}>2. Get Matched</Text>
+              <Text style={styles.stepDesc}>
+                Drivers see your request (grouped with similar routes) and accept.
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.step}>
+            <View style={styles.stepIconContainer}>
+              <Ionicons name="car-outline" size={28} color="#7C3AED" />
+            </View>
+            <View style={styles.stepContent}>
+              <Text style={styles.stepTitle}>3. Ride & Pay</Text>
+              <Text style={styles.stepDesc}>
+                Enjoy the shared ride. Pay only after the trip is completed.
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Features */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Features You’ll Love</Text>
+
+          <View style={styles.feature}>
+            <Ionicons name="shield-checkmark-outline" size={24} color="#10B981" />
+            <Text style={styles.featureText}>Safe & Verified Drivers</Text>
+          </View>
+
+          <View style={styles.feature}>
+            <Ionicons name="cash-outline" size={24} color="#10B981" />
+            <Text style={styles.featureText}>Save up to 60% on travel costs</Text>
+          </View>
+
+          <View style={styles.feature}>
+            <Ionicons name="leaf-outline" size={24} color="#10B981" />
+            <Text style={styles.featureText}>Reduce carbon footprint</Text>
+          </View>
+
+          <View style={styles.feature}>
+            <Ionicons name="chatbubble-outline" size={24} color="#10B981" />
+            <Text style={styles.featureText}>In-app chat with co-riders</Text>
+          </View>
+        </View>
+
+        {/* Safety Tips */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Safety First</Text>
+          <Text style={styles.safetyText}>
+            • Only ride with verified drivers{"\n"}
+            • Share your live location with family{"\n"}
+            • Meet at public places{"\n"}
+            • Report any issue immediately
+          </Text>
+        </View>
+
+        {/* Call to Action */}
+        <View style={styles.ctaContainer}>
+          <TouchableOpacity
+            style={styles.ctaButton}
+            onPress={() => router.push('/(tabs)/create-request')}
+          >
+            <Ionicons name="add-circle-outline" size={24} color="#fff" />
+            <Text style={styles.ctaText}>Create New Request</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.ctaButton, styles.secondaryButton]}
+            onPress={() => router.push('/(tabs)/explore')} // or your find-rides screen
+          >
+            <Ionicons name="search-outline" size={24} color="#7C3AED" />
+            <Text style={[styles.ctaText, styles.secondaryText]}>Find Available Rides</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  headerImage: {
-    color: '#808080',
-    bottom: -90,
-    left: -35,
-    position: 'absolute',
+  safe: {
+    flex: 1,
+    backgroundColor: '#0B1120',
   },
-  titleContainer: {
+  container: {
+    padding: 24,
+    paddingBottom: 40,
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#F8FAFC',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#94A3B8',
+    textAlign: 'center',
+    marginBottom: 40,
+    lineHeight: 24,
+  },
+  section: {
+    marginBottom: 40,
+  },
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#F8FAFC',
+    marginBottom: 20,
+  },
+  step: {
     flexDirection: 'row',
-    gap: 8,
+    marginBottom: 20,
+  },
+  stepIconContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(124, 58, 237, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  stepContent: {
+    flex: 1,
+  },
+  stepTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#F8FAFC',
+    marginBottom: 6,
+  },
+  stepDesc: {
+    fontSize: 15,
+    color: '#94A3B8',
+    lineHeight: 22,
+  },
+  feature: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  featureText: {
+    fontSize: 16,
+    color: '#F8FAFC',
+    marginLeft: 12,
+  },
+  safetyText: {
+    fontSize: 15,
+    color: '#94A3B8',
+    lineHeight: 24,
+  },
+  ctaContainer: {
+    marginTop: 20,
+  },
+  ctaButton: {
+    flexDirection: 'row',
+    backgroundColor: '#7C3AED',
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  secondaryButton: {
+    backgroundColor: 'rgba(124, 58, 237, 0.15)',
+  },
+  ctaText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
+    marginLeft: 12,
+  },
+  secondaryText: {
+    color: '#7C3AED',
   },
 });

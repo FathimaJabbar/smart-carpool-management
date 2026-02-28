@@ -1,5 +1,5 @@
 // app/(tabs)/rider-home.tsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
@@ -17,10 +18,14 @@ import { router } from 'expo-router';
 export default function RiderHome() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [userId, setUserId] = useState(null);
 
-  useEffect(() => {
-    const loadUserAndRequests = async () => {
+  const loadRequests = useCallback(async () => {
+    setLoading(true);
+    setRefreshing(true);
+
+    try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user?.id) {
         Alert.alert("Error", "Not logged in");
@@ -34,25 +39,30 @@ export default function RiderHome() {
         .select('*')
         .eq('rider_id', session.user.id)
         .order('created_at', { ascending: false })
-        .limit(10);
+        .limit(15);
 
-      if (error) {
-        Alert.alert("Error loading requests", error.message);
-      } else {
-        setRequests(data || []);
-      }
+      if (error) throw error;
+
+      setRequests(data || []);
+    } catch (err) {
+      console.error("Load requests error:", err);
+      Alert.alert("Error", "Failed to load your ride requests.");
+    } finally {
       setLoading(false);
-    };
-
-    loadUserAndRequests();
+      setRefreshing(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadRequests();
+  }, [loadRequests]);
 
   const goToPayment = (request) => {
     router.push({
       pathname: '/(tabs)/payment',
       params: {
         requestId: request.request_id,
-        fare: request.estimated_fare || 0, // if you have this column
+        fare: request.estimated_fare || 0,
         pickup: request.pickup_location,
         destination: request.destination,
       },
@@ -60,8 +70,14 @@ export default function RiderHome() {
   };
 
   const renderRequest = ({ item }) => {
-    const isAccepted = item.request_status === 'accepted' || item.request_status === 'paid_pending';
-    const isPaidOrCompleted = item.request_status === 'paid' || item.request_status === 'completed';
+    const status = item.request_status.toLowerCase();
+    const isPending = status === 'pending';
+    const isAccepted = status === 'accepted' || status === 'paid_pending';
+    const isCompleted = status === 'completed';
+    const isPaid = status === 'paid';
+
+    let statusColor = '#EF4444'; // default red
+    if (isAccepted || isCompleted || isPaid) statusColor = '#10B981'; // green
 
     return (
       <View style={styles.requestCard}>
@@ -69,19 +85,16 @@ export default function RiderHome() {
         <View style={styles.routeRow}>
           <Ionicons name="location-sharp" size={22} color="#7C3AED" />
           <Text style={styles.route}>
-            {item.pickup_location} → {item.destination}
+            {item.pickup_location || 'Pickup'} → {item.destination || 'Destination'}
           </Text>
         </View>
 
-        {/* Details */}
+        {/* Details row */}
         <View style={styles.detailsRow}>
           <Text style={styles.detail}>
             Date: {item.ride_date || new Date(item.created_at).toLocaleDateString()}
           </Text>
-          <Text style={[
-            styles.detail,
-            { color: isPaidOrCompleted || isAccepted ? '#10B981' : '#EF4444' }
-          ]}>
+          <Text style={[styles.status, { color: statusColor }]}>
             {item.request_status.toUpperCase()}
           </Text>
           <Text style={styles.detail}>
@@ -89,58 +102,72 @@ export default function RiderHome() {
           </Text>
         </View>
 
-        {/* Action area - always reserves space */}
+        {/* Action area - fixed height to prevent jump */}
         <View style={styles.actionArea}>
-          {isAccepted && (
+          {isCompleted && !isPaid && (
             <TouchableOpacity style={styles.payButton} onPress={() => goToPayment(item)}>
               <Text style={styles.payText}>Pay Now</Text>
             </TouchableOpacity>
           )}
 
-          {isPaidOrCompleted && (
+          {isPaid && (
             <View style={styles.paidBadge}>
               <Ionicons name="checkmark-circle" size={20} color="#10B981" />
               <Text style={styles.paidText}>Paid ✓</Text>
             </View>
           )}
 
-          {!isAccepted && !isPaidOrCompleted && (
-            <Text style={styles.waitingText}>Waiting for driver...</Text>
+          {isPending && (
+            <Text style={styles.waitingText}>Waiting for a driver to accept...</Text>
+          )}
+
+          {isAccepted && !isCompleted && (
+            <Text style={styles.waitingText}>Ride accepted — waiting for completion</Text>
           )}
         </View>
       </View>
     );
   };
 
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <ActivityIndicator size="large" color="#7C3AED" style={{ flex: 1 }} />
-      </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaView style={styles.safe}>
       <Text style={styles.title}>Your Ride Requests</Text>
 
-      {requests.length === 0 ? (
-        <Text style={styles.empty}>No recent requests yet</Text>
+      {loading && !refreshing ? (
+        <ActivityIndicator size="large" color="#7C3AED" style={{ flex: 1 }} />
+      ) : requests.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>No ride requests yet</Text>
+          <TouchableOpacity
+            style={styles.newButtonSmall}
+            onPress={() => router.push('/(tabs)/create-request')}
+          >
+            <Ionicons name="add-circle-outline" size={24} color="#fff" />
+            <Text style={styles.newButtonTextSmall}>Create New Request</Text>
+          </TouchableOpacity>
+        </View>
       ) : (
         <FlatList
           data={requests}
           renderItem={renderRequest}
           keyExtractor={item => item.request_id}
           contentContainerStyle={{ paddingBottom: 120 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={loadRequests}
+              tintColor="#7C3AED"
+            />
+          }
         />
       )}
 
+      {/* Floating action button */}
       <TouchableOpacity
-        style={styles.newButton}
+        style={styles.fab}
         onPress={() => router.push('/(tabs)/create-request')}
       >
-        <Ionicons name="add-circle-outline" size={24} color="#fff" />
-        <Text style={styles.newButtonText}>New Request</Text>
+        <Ionicons name="add" size={32} color="#fff" />
       </TouchableOpacity>
     </SafeAreaView>
   );
@@ -148,8 +175,39 @@ export default function RiderHome() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0B1120' },
-  title: { fontSize: 26, fontWeight: '800', color: '#F8FAFC', textAlign: 'center', marginVertical: 20 },
-  empty: { color: '#94A3B8', fontSize: 18, textAlign: 'center', marginTop: 60 },
+  title: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#F8FAFC',
+    textAlign: 'center',
+    marginVertical: 20,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  emptyText: {
+    color: '#94A3B8',
+    fontSize: 18,
+    textAlign: 'center',
+    marginBottom: 32,
+  },
+  newButtonSmall: {
+    flexDirection: 'row',
+    backgroundColor: '#7C3AED',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 16,
+    alignItems: 'center',
+  },
+  newButtonTextSmall: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    marginLeft: 12,
+  },
   requestCard: {
     backgroundColor: '#1E293B',
     borderRadius: 16,
@@ -179,6 +237,9 @@ const styles = StyleSheet.create({
   detail: {
     color: '#94A3B8',
     fontSize: 14,
+  },
+  status: {
+    fontWeight: '700',
   },
   actionArea: {
     minHeight: 48,
@@ -216,24 +277,22 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     fontSize: 14,
     fontStyle: 'italic',
+    textAlign: 'center',
   },
-  newButton: {
-    backgroundColor: '#7C3AED',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 16,
-    margin: 16,
-    borderRadius: 16,
+  fab: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-  },
-  newButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-    marginLeft: 12,
+    bottom: 24,
+    right: 24,
+    backgroundColor: '#7C3AED',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
   },
 });

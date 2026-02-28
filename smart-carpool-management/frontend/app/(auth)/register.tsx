@@ -1,4 +1,3 @@
-// app/(auth)/register.tsx (full updated file)
 import { useState } from 'react';
 import {
   View,
@@ -14,14 +13,17 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
 import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function Register() {
+  const [role, setRole] = useState('rider'); // 'rider' or 'driver'
+  const [loading, setLoading] = useState(false);
+
+  // Common fields
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
-  const [role, setRole] = useState('rider'); // 'rider' or 'driver'
-  const [loading, setLoading] = useState(false);
 
   // Driver fields
   const [vehicleModel, setVehicleModel] = useState('');
@@ -30,7 +32,7 @@ export default function Register() {
 
   const handleRegister = async () => {
     if (!name.trim() || !email.trim() || !password || !phone.trim()) {
-      alert('Please fill all required fields');
+      alert('Please fill all basic details');
       return;
     }
 
@@ -63,40 +65,35 @@ export default function Register() {
       const userId = user.id;
 
       if (role === 'driver') {
-        // Driver profile
         const { error: driverErr } = await supabase.from('drivers').insert({
           driver_id: userId,
           name: name.trim(),
           email: email.trim(),
           phone: phone.trim(),
         });
-
         if (driverErr) throw driverErr;
 
-        // Vehicle
         const { error: vehicleErr } = await supabase.from('vehicles').insert({
           driver_id: userId,
           vehicle_model: vehicleModel.trim(),
           vehicle_number: vehicleNumber.trim().toUpperCase(),
           seating_capacity: Number(capacity),
         });
-
         if (vehicleErr) throw vehicleErr;
+        
       } else {
-        // Rider profile
         const { error: riderErr } = await supabase.from('riders').insert({
           rider_id: userId,
           name: name.trim(),
           email: email.trim(),
           phone: phone.trim(),
         });
-
         if (riderErr) throw riderErr;
       }
 
-      alert('Registration successful! Please check your email to verify.');
+      alert('Registration successful! You can now log in.');
       router.replace('/(auth)/login');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Registration error:', err);
       alert(err.message || 'Something went wrong');
     } finally {
@@ -110,112 +107,79 @@ export default function Register() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardAvoid}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <Text style={styles.title}>Register</Text>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          
+          {/* Header */}
+          <View style={styles.headerContainer}>
+            <Text style={styles.title}>Create Account</Text>
+            <Text style={styles.subtitle}>Join the smart commute today</Text>
+          </View>
 
-          {/* Common fields */}
-          <TextInput
-            style={styles.input}
-            placeholder="Full Name"
-            value={name}
-            onChangeText={setName}
-            placeholderTextColor="#94A3B8"
-            autoCapitalize="words"
-          />
-
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            placeholderTextColor="#94A3B8"
-          />
-
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            placeholderTextColor="#94A3B8"
-          />
-
-          <TextInput
-            style={styles.input}
-            placeholder="Phone Number"
-            value={phone}
-            onChangeText={setPhone}
-            keyboardType="phone-pad"
-            placeholderTextColor="#94A3B8"
-          />
-
-          {/* Role selection */}
+          {/* Sleek Role Selector at the TOP */}
           <View style={styles.roleContainer}>
             <TouchableOpacity
-              style={[
-                styles.roleButton,
-                role === 'rider' && styles.roleButtonActive,
-              ]}
+              style={[styles.roleButton, role === 'rider' && styles.roleButtonActive]}
               onPress={() => setRole('rider')}
             >
-              <Text style={[
-                styles.roleText,
-                role === 'rider' && styles.roleTextActive,
-              ]}>
-                Rider
-              </Text>
+              <Ionicons name="person" size={18} color={role === 'rider' ? '#FFF' : '#64748B'} />
+              <Text style={[styles.roleText, role === 'rider' && styles.roleTextActive]}>Rider</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[
-                styles.roleButton,
-                role === 'driver' && styles.roleButtonActive,
-              ]}
+              style={[styles.roleButton, role === 'driver' && styles.roleButtonActive]}
               onPress={() => setRole('driver')}
             >
-              <Text style={[
-                styles.roleText,
-                role === 'driver' && styles.roleTextActive,
-              ]}>
-                Driver
-              </Text>
+              <Ionicons name="car" size={18} color={role === 'driver' ? '#FFF' : '#64748B'} />
+              <Text style={[styles.roleText, role === 'driver' && styles.roleTextActive]}>Driver</Text>
             </TouchableOpacity>
           </View>
 
-          {/* Driver fields - shown conditionally */}
+          {/* Personal Information */}
+          <View style={styles.inputGroup}>
+            <View style={styles.inputWrapper}>
+              <Ionicons name="person-outline" size={20} color="#64748B" style={styles.inputIcon} />
+              <TextInput style={styles.input} placeholder="Full Name" value={name} onChangeText={setName} placeholderTextColor="#64748B" autoCapitalize="words" />
+            </View>
+
+            <View style={styles.inputWrapper}>
+              <Ionicons name="mail-outline" size={20} color="#64748B" style={styles.inputIcon} />
+              <TextInput style={styles.input} placeholder="Email Address" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" placeholderTextColor="#64748B" />
+            </View>
+
+            <View style={styles.inputWrapper}>
+              <Ionicons name="lock-closed-outline" size={20} color="#64748B" style={styles.inputIcon} />
+              <TextInput style={styles.input} placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry placeholderTextColor="#64748B" />
+            </View>
+
+            <View style={styles.inputWrapper}>
+              <Ionicons name="call-outline" size={20} color="#64748B" style={styles.inputIcon} />
+              <TextInput style={styles.input} placeholder="Phone Number" value={phone} onChangeText={setPhone} keyboardType="phone-pad" placeholderTextColor="#64748B" />
+            </View>
+          </View>
+
+          {/* Driver Conditional Fields */}
           {role === 'driver' && (
-            <View style={styles.driverFields}>
-              <TextInput
-                style={styles.input}
-                placeholder="Vehicle Model (e.g. Swift Dzire)"
-                value={vehicleModel}
-                onChangeText={setVehicleModel}
-                placeholderTextColor="#94A3B8"
-              />
+            <View style={styles.driverSection}>
+              <Text style={styles.sectionTitle}>Vehicle Details</Text>
+              
+              <View style={styles.inputWrapper}>
+                <Ionicons name="car-sport-outline" size={20} color="#7C3AED" style={styles.inputIcon} />
+                <TextInput style={styles.input} placeholder="Vehicle Model (e.g. Swift)" value={vehicleModel} onChangeText={setVehicleModel} placeholderTextColor="#64748B" />
+              </View>
 
-              <TextInput
-                style={styles.input}
-                placeholder="Vehicle Number (e.g. KL07 AB 1234)"
-                value={vehicleNumber}
-                onChangeText={setVehicleNumber}
-                autoCapitalize="characters"
-                placeholderTextColor="#94A3B8"
-              />
+              <View style={styles.inputWrapper}>
+                <Ionicons name="reader-outline" size={20} color="#7C3AED" style={styles.inputIcon} />
+                <TextInput style={styles.input} placeholder="Reg Number (e.g. KL07 AB 1234)" value={vehicleNumber} onChangeText={setVehicleNumber} autoCapitalize="characters" placeholderTextColor="#64748B" />
+              </View>
 
-              <TextInput
-                style={styles.input}
-                placeholder="Seating Capacity"
-                value={capacity}
-                onChangeText={setCapacity}
-                keyboardType="number-pad"
-                placeholderTextColor="#94A3B8"
-              />
+              <View style={styles.inputWrapper}>
+                <Ionicons name="people-circle-outline" size={20} color="#7C3AED" style={styles.inputIcon} />
+                <TextInput style={styles.input} placeholder="Seating Capacity (e.g. 4)" value={capacity} onChangeText={setCapacity} keyboardType="number-pad" placeholderTextColor="#64748B" />
+              </View>
             </View>
           )}
 
-          {/* Register button */}
+          {/* Register Button */}
           <TouchableOpacity
             style={[styles.registerButton, loading && styles.buttonDisabled]}
             onPress={handleRegister}
@@ -224,19 +188,18 @@ export default function Register() {
             {loading ? (
               <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <Text style={styles.registerButtonText}>Register</Text>
+              <Text style={styles.registerButtonText}>Create Account</Text>
             )}
           </TouchableOpacity>
 
-          {/* Login link */}
-          <TouchableOpacity
-            style={styles.loginLinkContainer}
-            onPress={() => router.replace('/(auth)/login')}
-          >
-            <Text style={styles.loginLinkText}>
-              Already have an account? <Text style={styles.loginLinkBold}>Login</Text>
-            </Text>
-          </TouchableOpacity>
+          {/* Footer Login Link */}
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>Already have an account? </Text>
+            <TouchableOpacity onPress={() => router.replace('/(auth)/login')}>
+              <Text style={styles.loginLinkBold}>Log in</Text>
+            </TouchableOpacity>
+          </View>
+
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -254,83 +217,129 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 24,
-    paddingTop: 40,
-    paddingBottom: 40,
+    paddingTop: 30,
+    paddingBottom: 60,
+  },
+  headerContainer: {
+    marginBottom: 30,
+    alignItems: 'center',
   },
   title: {
     fontSize: 32,
-    fontWeight: '800',
+    fontWeight: '900',
     color: '#F8FAFC',
-    textAlign: 'center',
-    marginBottom: 48,
+    letterSpacing: 0.5,
   },
-  input: {
-    backgroundColor: '#1E293B',
-    color: '#F8FAFC',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderRadius: 16,
-    fontSize: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.3)',
+  subtitle: {
+    color: '#94A3B8',
+    fontSize: 15,
+    marginTop: 8,
   },
   roleContainer: {
     flexDirection: 'row',
     backgroundColor: '#1E293B',
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 6,
-    marginBottom: 28,
+    marginBottom: 30,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
   },
   roleButton: {
     flex: 1,
+    flexDirection: 'row',
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 16,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   roleButtonActive: {
     backgroundColor: '#7C3AED',
+    shadowColor: '#7C3AED',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   roleText: {
-    color: '#94A3B8',
+    color: '#64748B',
     fontSize: 16,
     fontWeight: '700',
+    marginLeft: 8,
   },
   roleTextActive: {
     color: '#FFFFFF',
   },
-  driverFields: {
-    marginBottom: 28,
+  inputGroup: {
+    marginBottom: 10,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1E293B',
+    borderRadius: 16,
+    marginBottom: 16,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.1)',
+  },
+  inputIcon: {
+    marginRight: 12,
+  },
+  input: {
+    flex: 1,
+    color: '#F8FAFC',
+    paddingVertical: 16,
+    fontSize: 16,
+  },
+  driverSection: {
+    backgroundColor: 'rgba(124, 58, 237, 0.05)',
+    padding: 20,
+    borderRadius: 20,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(124, 58, 237, 0.2)',
+  },
+  sectionTitle: {
+    color: '#A78BFA',
+    fontSize: 14,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 16,
   },
   registerButton: {
     backgroundColor: '#7C3AED',
     paddingVertical: 18,
-    borderRadius: 16,
+    borderRadius: 18,
     alignItems: 'center',
-    marginBottom: 24,
+    marginTop: 10,
     shadowColor: '#7C3AED',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 6,
+    shadowRadius: 12,
+    elevation: 8,
   },
   buttonDisabled: {
-    opacity: 0.6,
+    opacity: 0.7,
   },
   registerButtonText: {
     color: '#FFFFFF',
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
-  loginLinkContainer: {
-    alignItems: 'center',
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 30,
   },
-  loginLinkText: {
+  footerText: {
     color: '#94A3B8',
-    fontSize: 16,
+    fontSize: 15,
   },
   loginLinkBold: {
-    color: '#7C3AED',
+    color: '#A78BFA',
+    fontSize: 15,
     fontWeight: '700',
   },
 });

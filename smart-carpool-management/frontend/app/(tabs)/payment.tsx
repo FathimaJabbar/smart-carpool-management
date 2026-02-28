@@ -1,4 +1,3 @@
-// app/(tabs)/payment.tsx
 import { useState, useEffect } from 'react';
 import {
   View,
@@ -7,120 +6,105 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { BlurView } from 'expo-blur';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function Payment() {
   const { requestId, fare, pickup, destination } = useLocalSearchParams();
-
   const [loading, setLoading] = useState(false);
-  const [riderId, setRiderId] = useState(null);
-  const [errorMsg, setErrorMsg] = useState(null);
-
-  const amount = Number(fare) || 0;
+  const [rideId, setRideId] = useState(null);
 
   useEffect(() => {
-    const fetchUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user?.id) {
-        setRiderId(user.id);
-      } else {
-        setErrorMsg("Not logged in. Please login again.");
-        setTimeout(() => router.replace('/(auth)/login'), 1500);
-      }
+    const fetchContext = async () => {
+      // Find the ride_id associated with this request (Fixes NULL ride_id in payments)
+      const { data } = await supabase
+        .from('ride_assignments')
+        .select('ride_id')
+        .eq('request_id', requestId)
+        .single();
+      
+      if (data) setRideId(data.ride_id);
     };
-    fetchUser();
-  }, []);
+    fetchContext();
+  }, [requestId]);
 
   const handleConfirm = async () => {
-    if (errorMsg) {
-      Alert.alert("Error", errorMsg);
-      return;
-    }
-
-    if (!riderId || !requestId || amount <= 0) {
-      Alert.alert("Error", "Invalid ride or user information. Please try again.");
-      return;
-    }
-
     setLoading(true);
-
     try {
-      // Insert payment
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Authentication failed");
+
+      // 1. Insert Payment
       const { error: payError } = await supabase.from('payments').insert({
-        ride_id: null,
-        rider_id: riderId,
-        amount,
+        ride_id: rideId, // Linked to the actual ride record
+        rider_id: user.id,
+        amount: Number(fare),
         payment_status: 'completed',
         payment_date: new Date().toISOString(),
       });
 
       if (payError) throw payError;
 
-      // Optional: Update request status
+      // 2. Update Request Status
       await supabase
         .from('ride_requests')
-        .update({ request_status: 'paid_pending' })
+        .update({ request_status: 'paid' })
         .eq('request_id', requestId);
 
       Alert.alert(
-        "Payment Confirmed!",
-        `₹${amount} recorded for ${pickup} → ${destination}.\nYour request is ready for drivers.`,
-        [
-          {
-            text: "OK",
-            onPress: () => router.replace('/(tabs)/rider-home'),
-          },
-        ]
+        "Payment Success",
+        `₹${fare} paid successfully!`,
+        [{ text: "Great!", onPress: () => router.replace('/(tabs)/rider-home') }]
       );
     } catch (err) {
-      console.error("Payment error:", err);
-      Alert.alert("Error", err.message || "Failed to record payment.");
+      Alert.alert("Payment Failed", err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  if (errorMsg) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <Text style={styles.errorText}>{errorMsg}</Text>
-      </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
-        <Text style={styles.title}>Payment Confirmation</Text>
+        <BlurView intensity={80} tint="dark" style={styles.card}>
+          <View style={styles.iconCircle}>
+            <Ionicons name="wallet" size={40} color="#10B981" />
+          </View>
+          
+          <Text style={styles.title}>Payment Due</Text>
+          <Text style={styles.amount}>₹{fare}</Text>
+          
+          <View style={styles.divider} />
+          
+          <View style={styles.infoRow}>
+            <Ionicons name="location-outline" size={20} color="#94A3B8" />
+            <Text style={styles.infoText} numberOfLines={2}>
+              {pickup} → {destination}
+            </Text>
+          </View>
 
-        <View style={styles.summary}>
-          <Text style={styles.label}>Ride Route</Text>
-          <Text style={styles.value}>
-            {pickup || 'Pickup'} → {destination || 'Destination'}
+          <TouchableOpacity 
+            style={[styles.payBtn, loading && styles.disabled]} 
+            onPress={handleConfirm}
+            disabled={loading}
+          >
+            {loading ? <ActivityIndicator color="#FFF" /> : (
+              <>
+                <Text style={styles.payBtnText}>Confirm Payment</Text>
+                <Ionicons name="shield-checkmark" size={20} color="#FFF" style={{ marginLeft: 8 }} />
+              </>
+            )}
+          </TouchableOpacity>
+          
+          <Text style={styles.secureText}>
+            <Ionicons name="lock-closed" size={12} color="#94A3B8" /> Secure Demo Transaction
           </Text>
-
-          <Text style={styles.label}>Amount Due</Text>
-          <Text style={styles.amount}>₹{amount || 'N/A'}</Text>
-        </View>
-
-        <TouchableOpacity
-          style={[styles.button, loading && styles.disabled]}
-          onPress={handleConfirm}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Confirm Payment (Simulated)</Text>
-          )}
-        </TouchableOpacity>
-
-        <Text style={styles.note}>
-          Demo only — no real money is involved.
-        </Text>
+        </BlurView>
       </View>
     </SafeAreaView>
   );
@@ -128,30 +112,43 @@ export default function Payment() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0B1120' },
-  container: { flex: 1, padding: 24, justifyContent: 'center', alignItems: 'center' },
-  title: { fontSize: 28, fontWeight: '800', color: '#F8FAFC', marginBottom: 40 },
-  summary: {
-    backgroundColor: '#1E293B',
-    borderRadius: 16,
-    padding: 24,
-    width: '100%',
-    marginBottom: 32,
+  container: { flex: 1, padding: 24, justifyContent: 'center' },
+  card: {
+    backgroundColor: 'rgba(30, 41, 59, 0.7)',
+    borderRadius: 32,
+    padding: 32,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.2)',
   },
-  label: { color: '#94A3B8', fontSize: 16, marginBottom: 8 },
-  value: { color: '#F8FAFC', fontSize: 18, fontWeight: '600', marginBottom: 24 },
-  amount: { color: '#10B981', fontSize: 48, fontWeight: '900' },
-  button: {
+  iconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  title: { color: '#94A3B8', fontSize: 16, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 1 },
+  amount: { color: '#F8FAFC', fontSize: 56, fontWeight: '900', marginVertical: 10 },
+  divider: { width: '100%', height: 1, backgroundColor: 'rgba(148, 163, 184, 0.1)', marginVertical: 24 },
+  infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 30 },
+  infoText: { color: '#F1F5F9', fontSize: 15, marginLeft: 10, flex: 1 },
+  payBtn: {
     backgroundColor: '#10B981',
-    paddingVertical: 16,
-    paddingHorizontal: 48,
-    borderRadius: 12,
-    width: '80%',
+    width: '100%',
+    height: 64,
+    borderRadius: 20,
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 24,
+    justifyContent: 'center',
+    shadowColor: '#10B981',
+    shadowOpacity: 0.3,
+    shadowRadius: 15,
+    elevation: 8,
   },
+  payBtnText: { color: '#FFF', fontSize: 18, fontWeight: '700' },
   disabled: { opacity: 0.6 },
-  buttonText: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  note: { color: '#94A3B8', fontSize: 14, textAlign: 'center' },
-  errorText: { color: '#EF4444', fontSize: 18, textAlign: 'center', marginTop: 100 },
+  secureText: { color: '#94A3B8', fontSize: 12, marginTop: 20 },
 });

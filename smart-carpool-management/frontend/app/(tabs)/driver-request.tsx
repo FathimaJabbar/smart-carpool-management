@@ -1,4 +1,3 @@
-// app/(tabs)/driver-grouped-requests.tsx
 import { useState, useEffect } from 'react';
 import {
   View,
@@ -8,276 +7,227 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { BlurView } from 'expo-blur';
+import Animated, { FadeInUp } from 'react-native-reanimated';
+
+const { width } = Dimensions.get('window');
 
 export default function DriverGroupedRequests() {
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [driverId, setDriverId] = useState(null);
 
-  // Pricing constants (adjust as needed)
-  const BASE_FARE = 30;
-  const RATE_PER_KM = 8;
-  const RIDER_SHARE = 0.6; // Riders pay 60% of full → driver gets more with groups
-  const AVG_DISTANCE = 12; // fallback — improve with OSRM later if needed
+  const RIDER_SHARE = 0.6; // Riders pay 60% of estimated fare in a group
 
   useEffect(() => {
-    const loadGroups = async () => {
+    loadGroups();
+  }, []);
+
+  const loadGroups = async () => {
+    try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user?.id) {
-        Alert.alert("Error", "Not logged in");
-        setLoading(false);
-        return;
-      }
+      if (!session) return;
       setDriverId(session.user.id);
 
       const { data: requests, error } = await supabase
         .from('ride_requests')
-        .select('request_id, pickup_location, destination, seats_required')
+        .select('*')
         .eq('request_status', 'pending');
 
-      if (error) {
-        Alert.alert("Error loading requests", error.message);
-        setLoading(false);
+      if (error) throw error;
+
+      const groupsMap = new Map();
+      requests.forEach(req => {
+        // Normalize location for grouping
+        const key = `${req.pickup_location.trim().toLowerCase()}||${req.destination.trim().toLowerCase()}`;
+        
+        if (!groupsMap.has(key)) {
+          groupsMap.set(key, {
+            pickup: req.pickup_location,
+            destination: req.destination,
+            requestIds: [],
+            totalSeats: 0,
+            totalEarnings: 0,
+            riders: []
+          });
+        }
+        
+        const g = groupsMap.get(key);
+        g.requestIds.push(req.request_id);
+        g.totalSeats += req.seats_required;
+        g.totalEarnings += (req.estimated_fare * RIDER_SHARE);
+        g.riders.push(req.rider_id);
+      });
+
+      setGroups(Array.from(groupsMap.values()));
+    } catch (err) {
+      Alert.alert("Error", "Failed to load requests");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const acceptGroup = async (group) => {
+    setLoading(true);
+    try {
+      // 1. Fetch the driver's vehicle (Fixes NULL vehicle_id)
+      const { data: vehicle, error: vErr } = await supabase
+        .from('vehicles')
+        .select('vehicle_id')
+        .eq('driver_id', driverId)
+        .single();
+
+      if (vErr || !vehicle) {
+        Alert.alert("No Vehicle", "Please add a vehicle to your profile first.");
         return;
       }
 
-      console.log("Fetched pending requests:", requests); // Debug: check in console
+      // 2. Create the Ride (Fixes NULL final_fare)
+      const { data: ride, error: rErr } = await supabase
+        .from('rides')
+        .insert({
+          driver_id: driverId,
+          vehicle_id: vehicle.vehicle_id,
+          ride_status: 'ongoing',
+          final_fare: Math.round(group.totalEarnings),
+          created_at: new Date().toISOString()
+        })
+        .select()
+        .single();
 
-      // Group by normalized pickup + destination
-      const groupsMap = new Map();
+      if (rErr) throw rErr;
 
-      requests.forEach(req => {
-        const pickupClean = (req.pickup_location || '').trim().toLowerCase();
-        const destClean = (req.destination || '').trim().toLowerCase();
-        const key = `${pickupClean}|||${destClean}`;
+      // 3. Link Assignments
+      const assignments = group.requestIds.map(id => ({
+        ride_id: ride.ride_id,
+        request_id: id
+      }));
+      await supabase.from('ride_assignments').insert(assignments);
 
-        if (!groupsMap.has(key)) {
-          groupsMap.set(key, {
-            key,
-            pickup: req.pickup_location,
-            destination: req.destination,
-            totalSeats: 0,
-            riderCount: 0,
-            requestIds: [],
-          });
-        }
+      // 4. Update status of all riders
+      await supabase
+        .from('ride_requests')
+        .update({ request_status: 'accepted' })
+        .in('request_id', group.requestIds);
 
-        const group = groupsMap.get(key);
-        group.totalSeats += req.seats_required || 0;
-        group.riderCount += 1;
-        group.requestIds.push(req.request_id);
-      });
-
-      // Calculate earnings for each group
-      const groupedArray = Array.from(groupsMap.values()).map(g => {
-        const distanceKm = AVG_DISTANCE;
-        const fullFare = BASE_FARE + distanceKm * RATE_PER_KM; // single rider full price
-        const perRiderFare = Math.round(fullFare * RIDER_SHARE);
-        const totalEarnings = perRiderFare * g.riderCount;
-
-        return {
-          ...g,
-          distanceKm,
-          perRiderFare,
-          totalEarnings,
-        };
-      });
-
-      setGroups(groupedArray);
+      Alert.alert("Success", "Ride Started! Check 'Active Rides' for details.");
+      router.replace('/(tabs)/driver-home');
+    } catch (e) {
+      Alert.alert("Error", e.message);
+    } finally {
       setLoading(false);
-    };
+    }
+  };
 
-    loadGroups();
-  }, []);
-
- const acceptGroup = async (group) => {
-  if (!group || group.riderCount === 0 || group.requestIds.length === 0) {
-    Alert.alert("Error", "Invalid group - no requests to accept");
-    console.log("Invalid group data:", group);
-    return;
-  }
-
-  Alert.alert(
-    "Accept Group?",
-    `${group.pickup} → ${group.destination}\n` +
-    `${group.riderCount} rider${group.riderCount > 1 ? 's' : ''}\n` +
-    `${group.totalSeats} seat${group.totalSeats > 1 ? 's' : ''}\n` +
-    `Each rider pays ≈ ₹${group.perRiderFare}\n` +
-    `You earn: ₹${group.totalEarnings}`,
-    [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Accept",
-        onPress: async () => {
-          try {
-            // 1. Get driver's vehicle (first one)
-            const { data: vehicle, error: vehErr } = await supabase
-              .from('vehicles')
-              .select('vehicle_id')
-              .eq('driver_id', driverId)
-              .limit(1)
-              .single();
-
-            if (vehErr || !vehicle) {
-              throw new Error("No vehicle registered. Please add one first.");
-            }
-
-            // 2. Create ride with vehicle_id and total final_fare
-            const { data: ride, error: rideErr } = await supabase
-              .from('rides')
-              .insert({
-                driver_id: driverId,
-                vehicle_id: vehicle.vehicle_id,
-                ride_status: 'ongoing', // or 'confirmed' if you allowed it
-                final_fare: group.totalEarnings, // total from all riders in group
-                created_at: new Date().toISOString(),
-              })
-              .select('ride_id')
-              .single();
-
-            if (rideErr) throw rideErr;
-
-            const rideId = ride.ride_id;
-
-            // 3. Assign all requests in group
-            const assignments = group.requestIds.map(id => ({
-              request_id: id,
-              ride_id: rideId,
-            }));
-
-            const { error: assignErr } = await supabase
-              .from('ride_assignments')
-              .insert(assignments);
-
-            if (assignErr) throw assignErr;
-
-            // 4. Update request statuses to accepted
-            const { error: updateErr } = await supabase
-              .from('ride_requests')
-              .update({ request_status: 'accepted' })
-              .in('request_id', group.requestIds);
-
-            if (updateErr) throw updateErr;
-
-            // 5. NEW: Link all payments for these riders to the new ride
-            // Get rider_ids from the requests in this group
-            const { data: riderData, error: riderErr } = await supabase
-              .from('ride_requests')
-              .select('rider_id')
-              .in('request_id', group.requestIds);
-
-            if (riderErr) {
-              console.warn("Failed to fetch riders for payment linking:", riderErr);
-            } else {
-              const riderIds = riderData?.map(r => r.rider_id) || [];
-
-              if (riderIds.length > 0) {
-                const { error: linkErr } = await supabase
-                  .from('payments')
-                  .update({ ride_id: rideId })
-                  .in('rider_id', riderIds)
-                  .is('ride_id', null); // only update those still null
-
-                if (linkErr) {
-                  console.warn("Payment linking warning:", linkErr);
-                  // Non-blocking — don't fail the accept
-                } else {
-                  console.log(`Linked ${riderIds.length} payments to ride ${rideId}`);
-                }
-              }
-            }
-
-            // 6. Success feedback + redirect
-            Alert.alert(
-              "Success",
-              `Group accepted! Ride created.\nYou earn ₹${group.totalEarnings}`,
-              [
-                {
-                  text: "OK",
-                  onPress: () => {
-                    router.replace('/(tabs)/driver-home');
-                  },
-                },
-              ]
-            );
-
-            // Remove from UI
-            setGroups(prev => prev.filter(g => g.key !== group.key));
-          } catch (err) {
-            console.error("Accept failed:", err);
-            Alert.alert("Error", err.message || "Failed to accept group");
-          }
-        },
-      },
-    ]
-  );
-};
-  const renderGroup = ({ item }) => (
-    <View style={styles.card}>
-      <View style={styles.routeRow}>
-        <Ionicons name="location-sharp" size={24} color="#7C3AED" />
-        <Text style={styles.route}>
-          {item.pickup || 'Unknown Pickup'} → {item.destination || 'Unknown Destination'}
-        </Text>
+  const renderGroup = ({ item, index }) => (
+    <Animated.View entering={FadeInUp.delay(index * 100)} style={styles.card}>
+      <View style={styles.cardHeader}>
+        <Ionicons name="people-circle-outline" size={32} color="#7C3AED" />
+        <View style={styles.headerText}>
+          <Text style={styles.groupTitle}>Grouped Request</Text>
+          <Text style={styles.passengerCount}>{item.requestIds.length} Passengers</Text>
+        </View>
       </View>
 
-      <Text style={styles.stats}>
-        {item.riderCount} rider{item.riderCount > 1 ? 's' : ''} • {item.totalSeats} seat{item.totalSeats > 1 ? 's' : ''}
-      </Text>
+      <View style={styles.routeContainer}>
+        <View style={styles.markerContainer}>
+          <View style={[styles.dot, { backgroundColor: '#7C3AED' }]} />
+          <View style={styles.line} />
+          <View style={[styles.dot, { backgroundColor: '#EF4444' }]} />
+        </View>
+        <View style={styles.addressContainer}>
+          <Text style={styles.addressText} numberOfLines={1}>{item.pickup}</Text>
+          <Text style={styles.addressText} numberOfLines={1}>{item.destination}</Text>
+        </View>
+      </View>
 
-      <Text style={styles.earnings}>
-        You earn: ₹{item.totalEarnings}
-        {'\n'}
-        <Text style={styles.earningsDetail}>(each rider ≈ ₹{item.perRiderFare})</Text>
-      </Text>
+      <View style={styles.statsRow}>
+        <View style={styles.statBox}>
+          <Text style={styles.statLabel}>SEATS</Text>
+          <Text style={styles.statValue}>{item.totalSeats}</Text>
+        </View>
+        <View style={styles.statBox}>
+          <Text style={styles.statLabel}>EST. EARNINGS</Text>
+          <Text style={[styles.statValue, { color: '#10B981' }]}>₹{Math.round(item.totalEarnings)}</Text>
+        </View>
+      </View>
 
       <TouchableOpacity style={styles.acceptBtn} onPress={() => acceptGroup(item)}>
-        <Text style={styles.acceptText}>Accept Group</Text>
+        <Text style={styles.acceptBtnText}>Accept Group Trip</Text>
+        <Ionicons name="chevron-forward" size={20} color="#FFF" />
       </TouchableOpacity>
-    </View>
+    </Animated.View>
   );
-
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <ActivityIndicator size="large" color="#7C3AED" style={{ flex: 1 }} />
-      </SafeAreaView>
-    );
-  }
 
   return (
     <SafeAreaView style={styles.safe}>
-      <Text style={styles.title}>Grouped Pending Requests</Text>
-
-      {groups.length === 0 ? (
-        <Text style={styles.empty}>No pending grouped requests</Text>
-      ) : (
-        <FlatList
-          data={groups}
-          renderItem={renderGroup}
-          keyExtractor={item => item.key}
-          contentContainerStyle={{ paddingBottom: 100 }}
-        />
-      )}
+      <View style={styles.container}>
+        <Text style={styles.title}>Available Groups</Text>
+        {loading ? (
+          <ActivityIndicator size="large" color="#7C3AED" style={{ flex: 1 }} />
+        ) : (
+          <FlatList
+            data={groups}
+            renderItem={renderGroup}
+            keyExtractor={(item, index) => index.toString()}
+            contentContainerStyle={{ paddingBottom: 40 }}
+            ListEmptyComponent={
+              <Text style={styles.emptyText}>No requests in your area yet.</Text>
+            }
+          />
+        )}
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0B1120' },
-  title: { fontSize: 26, fontWeight: '800', color: '#F8FAFC', textAlign: 'center', marginVertical: 20 },
-  empty: { color: '#94A3B8', fontSize: 18, textAlign: 'center', marginTop: 60 },
-  card: { backgroundColor: '#1E293B', borderRadius: 16, padding: 20, marginHorizontal: 16, marginBottom: 16 },
-  routeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  route: { color: '#F8FAFC', fontSize: 18, fontWeight: '700', marginLeft: 12, flex: 1 },
-  stats: { color: '#94A3B8', fontSize: 16, marginBottom: 6 },
-  earnings: { color: '#10B981', fontSize: 18, fontWeight: '700', marginVertical: 12 },
-  earningsDetail: { fontSize: 14, color: '#94A3B8' },
-  acceptBtn: { backgroundColor: '#7C3AED', padding: 14, borderRadius: 12, alignItems: 'center', marginTop: 8 },
-  acceptText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
+  container: { flex: 1, padding: 20 },
+  title: { fontSize: 28, fontWeight: '800', color: '#F8FAFC', marginBottom: 24 },
+  card: {
+    backgroundColor: '#1E293B',
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(124, 58, 237, 0.15)',
+  },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  headerText: { marginLeft: 12 },
+  groupTitle: { color: '#F8FAFC', fontSize: 18, fontWeight: '700' },
+  passengerCount: { color: '#94A3B8', fontSize: 14 },
+  routeContainer: { flexDirection: 'row', marginBottom: 20 },
+  markerContainer: { alignItems: 'center', marginRight: 15, paddingTop: 5 },
+  dot: { width: 10, height: 10, borderRadius: 5 },
+  line: { width: 2, height: 30, backgroundColor: 'rgba(148, 163, 184, 0.2)', marginVertical: 4 },
+  addressContainer: { flex: 1, justifyContent: 'space-between' },
+  addressText: { color: '#F1F5F9', fontSize: 15, fontWeight: '500' },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    borderRadius: 16,
+    padding: 15,
+    marginBottom: 20,
+  },
+  statBox: { alignItems: 'center', flex: 1 },
+  statLabel: { color: '#94A3B8', fontSize: 10, fontWeight: '700', marginBottom: 4 },
+  statValue: { color: '#F8FAFC', fontSize: 18, fontWeight: '800' },
+  acceptBtn: {
+    backgroundColor: '#7C3AED',
+    height: 56,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  acceptBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700', marginRight: 8 },
+  emptyText: { color: '#94A3B8', textAlign: 'center', marginTop: 100, fontSize: 16 },
 });

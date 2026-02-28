@@ -31,7 +31,10 @@ export default function DriverHome() {
         .eq('driver_id', session.user.id)
         .single();
 
-      if (data?.name) setDriverName(data.name.split(' ')[0]); // first name only
+      if (data?.name) {
+        // Show first name only for greeting
+        setDriverName(data.name.split(' ')[0]);
+      }
     };
 
     loadDriver();
@@ -40,7 +43,7 @@ export default function DriverHome() {
   const handleLogout = async () => {
     Alert.alert(
       "Logout",
-      "Are you sure?",
+      "Are you sure you want to log out?",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -58,6 +61,7 @@ export default function DriverHome() {
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.container}>
+        {/* Header with greeting and logout */}
         <View style={styles.header}>
           <Text style={styles.greeting}>Hello, {driverName}!</Text>
           <TouchableOpacity onPress={handleLogout}>
@@ -65,31 +69,43 @@ export default function DriverHome() {
           </TouchableOpacity>
         </View>
 
+        {/* Grouped Requests Card */}
         <TouchableOpacity
           style={styles.card}
+          activeOpacity={0.8}
           onPress={() => router.push('/(tabs)/driver-grouped-requests')}
         >
           <Ionicons name="people-outline" size={40} color="#7C3AED" />
           <Text style={styles.cardTitle}>Grouped Ride Requests</Text>
-          <Text style={styles.cardDesc}>Accept shared rides to earn more</Text>
+          <Text style={styles.cardDesc}>
+            View and accept shared rides to maximize your earnings
+          </Text>
         </TouchableOpacity>
 
+        {/* Earnings Card */}
         <TouchableOpacity
           style={styles.card}
+          activeOpacity={0.8}
           onPress={() => router.push('/(tabs)/driver-earnings')}
         >
           <Ionicons name="cash-outline" size={40} color="#7C3AED" />
           <Text style={styles.cardTitle}>My Earnings</Text>
-          <Text style={styles.cardDesc}>Monthly & total earnings overview</Text>
+          <Text style={styles.cardDesc}>
+            Track your monthly and total earnings from completed rides
+          </Text>
         </TouchableOpacity>
 
+        {/* Active Rides Card */}
         <TouchableOpacity
           style={styles.card}
+          activeOpacity={0.8}
           onPress={() => router.push('/(tabs)/driver-active-rides')}
         >
           <Ionicons name="car-outline" size={40} color="#7C3AED" />
           <Text style={styles.cardTitle}>Active Rides</Text>
-          <Text style={styles.cardDesc}>Manage ongoing rides</Text>
+          <Text style={styles.cardDesc}>
+            Manage your ongoing rides and mark them as completed
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -97,13 +113,19 @@ export default function DriverHome() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#0B1120' },
-  container: { padding: 20 },
+  safe: {
+    flex: 1,
+    backgroundColor: '#0B1120',
+  },
+  container: {
+    padding: 24,
+    paddingBottom: 40,
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 40,
   },
   greeting: {
     fontSize: 28,
@@ -112,23 +134,29 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: '#1E293B',
-    borderRadius: 16,
+    borderRadius: 20,
     padding: 24,
     marginBottom: 20,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(124, 58, 237, 0.2)',
+    borderColor: 'rgba(124, 58, 237, 0.15)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
   },
   cardTitle: {
     fontSize: 20,
     fontWeight: '700',
     color: '#F8FAFC',
-    marginTop: 12,
+    marginTop: 16,
     marginBottom: 8,
   },
   cardDesc: {
     fontSize: 14,
     color: '#94A3B8',
     textAlign: 'center',
+    lineHeight: 20,
   },
 });
