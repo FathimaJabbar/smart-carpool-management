@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Alert,
   RefreshControl,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
@@ -20,7 +21,7 @@ export default function RiderHome() {
   const [refreshing, setRefreshing] = useState(false);
   const [userName, setUserName] = useState('Rider');
 
-  const loadRequests = async () => {
+  const loadData = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) {
@@ -28,18 +29,10 @@ export default function RiderHome() {
         return;
       }
 
-      // Fetch user name for header
-      const { data: profile } = await supabase
-        .from('riders')
-        .select('name')
-        .eq('rider_id', session.user.id)
-        .single();
-      
+      const { data: profile } = await supabase.from('riders').select('name').eq('rider_id', session.user.id).single();
       if (profile?.name) setUserName(profile.name.split(' ')[0]);
 
-      // Fetch requests
-      const { data, error } = await supabase
-        .from('ride_requests')
+      const { data, error } = await supabase.from('ride_requests')
         .select('*')
         .eq('rider_id', session.user.id)
         .order('created_at', { ascending: false });
@@ -54,12 +47,7 @@ export default function RiderHome() {
     }
   };
 
-  // useFocusEffect automatically reloads data when you come back from the Payment screen!
-  useFocusEffect(
-    useCallback(() => {
-      loadRequests();
-    }, [])
-  );
+  useFocusEffect(useCallback(() => { loadData(); }, []));
 
   const handleLogout = async () => {
     Alert.alert("Logout", "Are you sure you want to log out?", [
@@ -73,17 +61,10 @@ export default function RiderHome() {
   };
 
   const goToPayment = (request) => {
-    // Fallback to ₹50 just in case it's an old record with no fare
     const fareToPass = request.estimated_fare > 0 ? request.estimated_fare : 50; 
-    
     router.push({
       pathname: '/(tabs)/payment',
-      params: {
-        requestId: request.request_id,
-        fare: fareToPass,
-        pickup: request.pickup_location,
-        destination: request.destination,
-      },
+      params: { requestId: request.request_id, fare: fareToPass, pickup: request.pickup_location, destination: request.destination },
     });
   };
 
@@ -92,28 +73,22 @@ export default function RiderHome() {
     const isCompleted = status === 'completed';
     const isPaid = status === 'paid';
     
-    // Status colors
-    let statusColor = '#EF4444'; // Red for pending
-    if (status === 'accepted') statusColor = '#3B82F6'; // Blue for accepted
-    if (isCompleted || isPaid) statusColor = '#10B981'; // Green for done
+    let statusColor = '#EF4444'; 
+    if (status === 'accepted') statusColor = '#3B82F6'; 
+    if (isCompleted || isPaid) statusColor = '#10B981'; 
 
-    // Format the ugly date string into a pretty one!
     const dateObj = new Date(item.ride_date || item.created_at);
     const prettyDate = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
     return (
       <View style={styles.card}>
-        {/* Card Header: Date & Status */}
         <View style={styles.cardHeader}>
           <Text style={styles.dateText}>{prettyDate}</Text>
           <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
-            <Text style={[styles.statusText, { color: statusColor }]}>
-              {status.toUpperCase()}
-            </Text>
+            <Text style={[styles.statusText, { color: statusColor }]}>{status.toUpperCase()}</Text>
           </View>
         </View>
 
-        {/* Route Details */}
         <View style={styles.routeContainer}>
           <Ionicons name="location" size={20} color="#7C3AED" />
           <Text style={styles.routeText} numberOfLines={1}>
@@ -121,18 +96,15 @@ export default function RiderHome() {
           </Text>
         </View>
 
-        {/* Footer: Seats & Action Buttons */}
         <View style={styles.cardFooter}>
           <Text style={styles.seatsText}>
             <Ionicons name="people" size={14} /> {item.seats_required} Seat(s)
           </Text>
-
           {isCompleted && !isPaid && (
             <TouchableOpacity style={styles.payBtn} onPress={() => goToPayment(item)}>
               <Text style={styles.payBtnText}>Pay Now</Text>
             </TouchableOpacity>
           )}
-
           {isPaid && (
             <View style={styles.paidBadge}>
               <Ionicons name="checkmark-circle" size={16} color="#10B981" />
@@ -154,58 +126,72 @@ export default function RiderHome() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      {/* Sleek Top Header */}
+      {/* Dashboard Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.greeting}>Hello, {userName}</Text>
-          <Text style={styles.subGreeting}>Your Ride Requests</Text>
+          <Text style={styles.greeting}>Hello, {userName}!</Text>
+          <Text style={styles.subGreeting}>Rider Dashboard</Text>
         </View>
         <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
           <Ionicons name="log-out-outline" size={24} color="#EF4444" />
         </TouchableOpacity>
       </View>
 
-      {requests.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Ionicons name="car-outline" size={80} color="#1E293B" style={{marginBottom: 20}} />
-          <Text style={styles.emptyText}>No ride requests yet</Text>
-          <TouchableOpacity style={styles.createBtn} onPress={() => router.push('/(tabs)/create-request')}>
-            <Ionicons name="add-circle" size={24} color="#FFF" style={{marginRight: 8}} />
-            <Text style={styles.createBtnText}>Create New Request</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <FlatList
-          data={requests}
-          renderItem={renderRequest}
-          keyExtractor={item => item.request_id}
-          contentContainerStyle={styles.listContainer}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadRequests(); }} tintColor="#7C3AED" />}
-        />
-      )}
+      <FlatList
+        data={requests}
+        keyExtractor={item => item.request_id}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadData(); }} tintColor="#7C3AED" />}
+        contentContainerStyle={{ paddingBottom: 40 }}
+        
+        // The Top Section of the Dashboard (Action Cards)
+        ListHeaderComponent={
+          <View style={styles.dashboardTop}>
+            <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/(tabs)/create-request')}>
+              <View style={[styles.iconBox, { backgroundColor: 'rgba(124, 58, 237, 0.15)' }]}>
+                <Ionicons name="car-sport" size={32} color="#7C3AED" />
+              </View>
+              <View style={styles.actionCardText}>
+                <Text style={styles.actionCardTitle}>Book a Ride</Text>
+                <Text style={styles.actionCardDesc}>Create a new carpool request</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={24} color="#64748B" />
+            </TouchableOpacity>
 
-      {/* Only show floating + button if list is NOT empty */}
-      {requests.length > 0 && (
-        <TouchableOpacity style={styles.fab} onPress={() => router.push('/(tabs)/create-request')}>
-          <Ionicons name="add" size={32} color="#fff" />
-        </TouchableOpacity>
-      )}
+            <Text style={styles.sectionTitle}>Recent Trips</Text>
+          </View>
+        }
+
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Ionicons name="map-outline" size={64} color="#1E293B" style={{marginBottom: 20}} />
+            <Text style={styles.emptyText}>You haven't requested any rides yet.</Text>
+          </View>
+        }
+        renderItem={renderRequest}
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0B1120' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingBottom: 10 },
-  greeting: { fontSize: 28, fontWeight: '900', color: '#F8FAFC' },
-  subGreeting: { fontSize: 16, color: '#94A3B8', marginTop: 4 },
-  logoutBtn: { backgroundColor: 'rgba(239, 68, 68, 0.1)', padding: 10, borderRadius: 12 },
-  listContainer: { padding: 20, paddingBottom: 100 },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
-  emptyText: { color: '#64748B', fontSize: 18, marginBottom: 30 },
-  createBtn: { flexDirection: 'row', backgroundColor: '#7C3AED', paddingVertical: 16, paddingHorizontal: 24, borderRadius: 16, alignItems: 'center' },
-  createBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
-  card: { backgroundColor: '#1E293B', borderRadius: 20, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(124, 58, 237, 0.15)' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingBottom: 20 },
+  greeting: { fontSize: 32, fontWeight: '900', color: '#F8FAFC' },
+  subGreeting: { fontSize: 16, color: '#94A3B8', marginTop: 4, fontWeight: '500' },
+  logoutBtn: { backgroundColor: 'rgba(239, 68, 68, 0.1)', width: 48, height: 48, borderRadius: 24, justifyContent: 'center', alignItems: 'center' },
+  
+  dashboardTop: { paddingHorizontal: 20, marginBottom: 10 },
+  actionCard: { backgroundColor: '#1E293B', borderRadius: 24, padding: 20, flexDirection: 'row', alignItems: 'center', marginBottom: 16, borderWidth: 1, borderColor: 'rgba(148, 163, 184, 0.1)' },
+  iconBox: { width: 60, height: 60, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginRight: 16 },
+  actionCardText: { flex: 1 },
+  actionCardTitle: { fontSize: 18, fontWeight: '800', color: '#F8FAFC', marginBottom: 6 },
+  actionCardDesc: { fontSize: 13, color: '#94A3B8' },
+  sectionTitle: { fontSize: 20, fontWeight: '800', color: '#F8FAFC', marginTop: 20, marginBottom: 10, paddingLeft: 4 },
+
+  emptyContainer: { alignItems: 'center', marginTop: 40 },
+  emptyText: { color: '#64748B', fontSize: 16 },
+  
+  card: { backgroundColor: '#1E293B', borderRadius: 20, padding: 20, marginHorizontal: 20, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(124, 58, 237, 0.15)' },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   dateText: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
   statusBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
@@ -218,5 +204,4 @@ const styles = StyleSheet.create({
   payBtnText: { color: '#FFF', fontWeight: '800', fontSize: 14 },
   paidBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(16, 185, 129, 0.15)', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 12 },
   paidText: { color: '#10B981', fontWeight: '800', marginLeft: 6 },
-  fab: { position: 'absolute', bottom: 30, right: 30, backgroundColor: '#7C3AED', width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center', shadowColor: '#7C3AED', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 8, elevation: 8 },
 });

@@ -29,6 +29,7 @@ export default function Register() {
   const [vehicleModel, setVehicleModel] = useState('');
   const [vehicleNumber, setVehicleNumber] = useState('');
   const [capacity, setCapacity] = useState('');
+  const [license, setLicense] = useState(''); // <-- Here is the License State!
 
   const handleRegister = async () => {
     if (!name.trim() || !email.trim() || !password || !phone.trim()) {
@@ -37,8 +38,9 @@ export default function Register() {
     }
 
     if (role === 'driver') {
-      if (!vehicleModel.trim() || !vehicleNumber.trim() || !capacity.trim()) {
-        alert('Please fill all vehicle details');
+      // Validates that the driver entered a license
+      if (!vehicleModel.trim() || !vehicleNumber.trim() || !capacity.trim() || !license.trim()) {
+        alert('Please fill all vehicle and license details');
         return;
       }
       const seating = Number(capacity);
@@ -65,11 +67,13 @@ export default function Register() {
       const userId = user.id;
 
       if (role === 'driver') {
+        // Inserts the new Driver along with their License Number
         const { error: driverErr } = await supabase.from('drivers').insert({
           driver_id: userId,
           name: name.trim(),
           email: email.trim(),
           phone: phone.trim(),
+          license_number: license.trim().toUpperCase(), // Saving to DB
         });
         if (driverErr) throw driverErr;
 
@@ -109,13 +113,11 @@ export default function Register() {
       >
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
           
-          {/* Header */}
           <View style={styles.headerContainer}>
             <Text style={styles.title}>Create Account</Text>
             <Text style={styles.subtitle}>Join the smart commute today</Text>
           </View>
 
-          {/* Sleek Role Selector at the TOP */}
           <View style={styles.roleContainer}>
             <TouchableOpacity
               style={[styles.roleButton, role === 'rider' && styles.roleButtonActive]}
@@ -134,7 +136,6 @@ export default function Register() {
             </TouchableOpacity>
           </View>
 
-          {/* Personal Information */}
           <View style={styles.inputGroup}>
             <View style={styles.inputWrapper}>
               <Ionicons name="person-outline" size={20} color="#64748B" style={styles.inputIcon} />
@@ -157,11 +158,16 @@ export default function Register() {
             </View>
           </View>
 
-          {/* Driver Conditional Fields */}
           {role === 'driver' && (
             <View style={styles.driverSection}>
-              <Text style={styles.sectionTitle}>Vehicle Details</Text>
+              <Text style={styles.sectionTitle}>Verification & Vehicle</Text>
               
+              {/* THE NEW LICENSE FIELD */}
+              <View style={styles.inputWrapper}>
+                <Ionicons name="card-outline" size={20} color="#7C3AED" style={styles.inputIcon} />
+                <TextInput style={styles.input} placeholder="Driver License No." value={license} onChangeText={setLicense} autoCapitalize="characters" placeholderTextColor="#64748B" />
+              </View>
+
               <View style={styles.inputWrapper}>
                 <Ionicons name="car-sport-outline" size={20} color="#7C3AED" style={styles.inputIcon} />
                 <TextInput style={styles.input} placeholder="Vehicle Model (e.g. Swift)" value={vehicleModel} onChangeText={setVehicleModel} placeholderTextColor="#64748B" />
@@ -179,7 +185,6 @@ export default function Register() {
             </View>
           )}
 
-          {/* Register Button */}
           <TouchableOpacity
             style={[styles.registerButton, loading && styles.buttonDisabled]}
             onPress={handleRegister}
@@ -192,7 +197,6 @@ export default function Register() {
             )}
           </TouchableOpacity>
 
-          {/* Footer Login Link */}
           <View style={styles.footer}>
             <Text style={styles.footerText}>Already have an account? </Text>
             <TouchableOpacity onPress={() => router.replace('/(auth)/login')}>
@@ -207,139 +211,27 @@ export default function Register() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#0B1120',
-  },
-  keyboardAvoid: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: 30,
-    paddingBottom: 60,
-  },
-  headerContainer: {
-    marginBottom: 30,
-    alignItems: 'center',
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '900',
-    color: '#F8FAFC',
-    letterSpacing: 0.5,
-  },
-  subtitle: {
-    color: '#94A3B8',
-    fontSize: 15,
-    marginTop: 8,
-  },
-  roleContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#1E293B',
-    borderRadius: 20,
-    padding: 6,
-    marginBottom: 30,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
-  },
-  roleButton: {
-    flex: 1,
-    flexDirection: 'row',
-    paddingVertical: 14,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  roleButtonActive: {
-    backgroundColor: '#7C3AED',
-    shadowColor: '#7C3AED',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  roleText: {
-    color: '#64748B',
-    fontSize: 16,
-    fontWeight: '700',
-    marginLeft: 8,
-  },
-  roleTextActive: {
-    color: '#FFFFFF',
-  },
-  inputGroup: {
-    marginBottom: 10,
-  },
-  inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1E293B',
-    borderRadius: 16,
-    marginBottom: 16,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.1)',
-  },
-  inputIcon: {
-    marginRight: 12,
-  },
-  input: {
-    flex: 1,
-    color: '#F8FAFC',
-    paddingVertical: 16,
-    fontSize: 16,
-  },
-  driverSection: {
-    backgroundColor: 'rgba(124, 58, 237, 0.05)',
-    padding: 20,
-    borderRadius: 20,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(124, 58, 237, 0.2)',
-  },
-  sectionTitle: {
-    color: '#A78BFA',
-    fontSize: 14,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 16,
-  },
-  registerButton: {
-    backgroundColor: '#7C3AED',
-    paddingVertical: 18,
-    borderRadius: 18,
-    alignItems: 'center',
-    marginTop: 10,
-    shadowColor: '#7C3AED',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  registerButtonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 30,
-  },
-  footerText: {
-    color: '#94A3B8',
-    fontSize: 15,
-  },
-  loginLinkBold: {
-    color: '#A78BFA',
-    fontSize: 15,
-    fontWeight: '700',
-  },
+  safeArea: { flex: 1, backgroundColor: '#0B1120' },
+  keyboardAvoid: { flex: 1 },
+  scrollContent: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 30, paddingBottom: 60 },
+  headerContainer: { marginBottom: 30, alignItems: 'center' },
+  title: { fontSize: 32, fontWeight: '900', color: '#F8FAFC', letterSpacing: 0.5 },
+  subtitle: { color: '#94A3B8', fontSize: 15, marginTop: 8 },
+  roleContainer: { flexDirection: 'row', backgroundColor: '#1E293B', borderRadius: 20, padding: 6, marginBottom: 30, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  roleButton: { flex: 1, flexDirection: 'row', paddingVertical: 14, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  roleButtonActive: { backgroundColor: '#7C3AED', shadowColor: '#7C3AED', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
+  roleText: { color: '#64748B', fontSize: 16, fontWeight: '700', marginLeft: 8 },
+  roleTextActive: { color: '#FFFFFF' },
+  inputGroup: { marginBottom: 10 },
+  inputWrapper: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1E293B', borderRadius: 16, marginBottom: 16, paddingHorizontal: 16, borderWidth: 1, borderColor: 'rgba(148, 163, 184, 0.1)' },
+  inputIcon: { marginRight: 12 },
+  input: { flex: 1, color: '#F8FAFC', paddingVertical: 16, fontSize: 16 },
+  driverSection: { backgroundColor: 'rgba(124, 58, 237, 0.05)', padding: 20, borderRadius: 20, marginBottom: 20, borderWidth: 1, borderColor: 'rgba(124, 58, 237, 0.2)' },
+  sectionTitle: { color: '#A78BFA', fontSize: 14, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 16 },
+  registerButton: { backgroundColor: '#7C3AED', paddingVertical: 18, borderRadius: 18, alignItems: 'center', marginTop: 10, shadowColor: '#7C3AED', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 8 },
+  buttonDisabled: { opacity: 0.7 },
+  registerButtonText: { color: '#FFFFFF', fontSize: 18, fontWeight: '800', letterSpacing: 0.5 },
+  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 30 },
+  footerText: { color: '#94A3B8', fontSize: 15 },
+  loginLinkBold: { color: '#A78BFA', fontSize: 15, fontWeight: '700' },
 });
