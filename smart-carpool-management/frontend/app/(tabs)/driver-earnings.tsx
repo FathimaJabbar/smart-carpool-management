@@ -5,7 +5,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Alert,
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -13,12 +12,15 @@ import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { BlurView } from 'expo-blur';
+import { useGlobalAlert } from '@/components/GlobalAlert';
 
 export default function DriverEarnings() {
   const [monthlyEarnings, setMonthlyEarnings] = useState(0);
   const [totalEarnings, setTotalEarnings] = useState(0);
   const [rideCount, setRideCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  
+  const { showAlert } = useGlobalAlert();
 
   const currentDate = new Date();
   const [selectedMonth, setSelectedMonth] = useState(currentDate.getMonth() + 1);
@@ -29,40 +31,44 @@ export default function DriverEarnings() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
+      const driverId = session.user.id;
 
-      // Total earnings
-      const { data: allRides, error: allErr } = await supabase
+      const { count: lifetimeTrips, error: countErr } = await supabase
         .from('rides')
-        .select('final_fare')
-        .eq('driver_id', session.user.id)
+        .select('*', { count: 'exact', head: true })
+        .eq('driver_id', driverId)
         .eq('ride_status', 'completed');
 
-      if (allErr) throw allErr;
+      if (countErr) throw countErr;
+      setRideCount(lifetimeTrips || 0);
 
-      const total = allRides.reduce((sum, r) => sum + (r.final_fare || 0), 0);
+      const { data: payments, error: payErr } = await supabase
+        .from('payments')
+        .select('amount, payment_date, rides!inner(driver_id)')
+        .eq('rides.driver_id', driverId)
+        .eq('payment_status', 'completed');
+
+      if (payErr) throw payErr;
+
+      const total = (payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
       setTotalEarnings(total);
-      setRideCount(allRides.length);
 
-      // Monthly earnings
-      const startOfMonth = new Date(selectedYear, selectedMonth - 1, 1).toISOString();
-      const endOfMonth = new Date(selectedYear, selectedMonth, 0, 23, 59, 59).toISOString();
+      const startOfMonth = new Date(selectedYear, selectedMonth - 1, 1).getTime();
+      const endOfMonth = new Date(selectedYear, selectedMonth, 0, 23, 59, 59).getTime();
 
-      const { data: monthlyRides, error: monthlyErr } = await supabase
-        .from('rides')
-        .select('final_fare')
-        .eq('driver_id', session.user.id)
-        .eq('ride_status', 'completed')
-        .gte('created_at', startOfMonth)
-        .lte('created_at', endOfMonth);
+      const monthlyTotal = (payments || []).reduce((sum, p) => {
+        const payDate = new Date(p.payment_date).getTime();
+        if (payDate >= startOfMonth && payDate <= endOfMonth) {
+          return sum + (Number(p.amount) || 0);
+        }
+        return sum;
+      }, 0);
 
-      if (monthlyErr) throw monthlyErr;
-
-      const monthlyTotal = monthlyRides.reduce((sum, r) => sum + (r.final_fare || 0), 0);
       setMonthlyEarnings(monthlyTotal);
 
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      Alert.alert("Error", "Could not load earnings.");
+      showAlert("Ledger Error", "Could not load verified payments from the database.", "error");
     } finally {
       setLoading(false);
     }
@@ -100,19 +106,17 @@ export default function DriverEarnings() {
       ) : (
         <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
           
-          {/* Total Earnings Hero Card */}
           <BlurView intensity={80} tint="dark" style={styles.heroCard}>
             <View style={styles.iconCircle}>
               <Ionicons name="wallet" size={32} color="#10B981" />
             </View>
-            <Text style={styles.heroLabel}>TOTAL BALANCE</Text>
+            <Text style={styles.heroLabel}>VERIFIED BALANCE</Text>
             <Text style={styles.heroAmount}>₹{totalEarnings.toLocaleString()}</Text>
             <View style={styles.badge}>
-              <Text style={styles.badgeText}>{rideCount} Lifetime Trips</Text>
+              <Text style={styles.badgeText}>{rideCount} Completed Trips</Text>
             </View>
           </BlurView>
 
-          {/* Month Selector */}
           <View style={styles.monthSelector}>
             <TouchableOpacity onPress={() => changeMonth(-1)} style={styles.arrowBtn}>
               <Ionicons name="chevron-back" size={24} color="#7C3AED" />
@@ -123,13 +127,13 @@ export default function DriverEarnings() {
             </TouchableOpacity>
           </View>
 
-          {/* Monthly Earnings Card */}
           <View style={styles.monthlyCard}>
             <View style={styles.monthlyHeader}>
               <Ionicons name="calendar-outline" size={24} color="#94A3B8" />
               <Text style={styles.monthlyLabel}>Earnings this month</Text>
             </View>
             <Text style={styles.monthlyAmount}>₹{monthlyEarnings.toLocaleString()}</Text>
+            {/* The extra text was removed from here! */}
           </View>
 
         </ScrollView>
@@ -146,13 +150,8 @@ const styles = StyleSheet.create({
   container: { padding: 20 },
   
   heroCard: {
-    borderRadius: 30,
-    padding: 30,
-    alignItems: 'center',
-    marginBottom: 30,
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.2)',
-    backgroundColor: 'rgba(16, 185, 129, 0.05)',
+    borderRadius: 30, padding: 30, alignItems: 'center', marginBottom: 30,
+    borderWidth: 1, borderColor: 'rgba(16, 185, 129, 0.2)', backgroundColor: 'rgba(16, 185, 129, 0.05)',
   },
   iconCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(16, 185, 129, 0.1)', justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
   heroLabel: { color: '#94A3B8', fontSize: 12, fontWeight: '800', letterSpacing: 1.5, marginBottom: 8 },

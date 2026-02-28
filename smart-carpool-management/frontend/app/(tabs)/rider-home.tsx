@@ -14,12 +14,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
+import { useGlobalAlert } from '@/components/GlobalAlert';
 
 export default function RiderHome() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [userName, setUserName] = useState('Rider');
+
+  const { showAlert } = useGlobalAlert();
 
   const loadData = async () => {
     try {
@@ -49,16 +52,17 @@ export default function RiderHome() {
 
   useFocusEffect(useCallback(() => { loadData(); }, []));
 
-  const handleLogout = async () => {
-    Alert.alert("Logout", "Are you sure you want to log out?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Logout", style: "destructive", onPress: async () => {
-          await supabase.auth.signOut();
-          router.replace('/(auth)/login');
-        }
+  const handleLogout = useCallback(async () => {
+    showAlert(
+      'Logout',
+      'Are you sure you want to log out?',
+      'info',
+      async () => {
+        await supabase.auth.signOut();
+        router.replace('/(auth)/login');
       }
-    ]);
-  };
+    );
+  }, [showAlert]);
 
   const goToPayment = (request) => {
     const fareToPass = request.estimated_fare > 0 ? request.estimated_fare : 50; 

@@ -1,131 +1,169 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { useState, useCallback } from 'react';
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import { BlurView } from 'expo-blur';
+import { router, useFocusEffect } from 'expo-router';
+import { useGlobalAlert } from '@/components/GlobalAlert'; // The new Global Alert
 
 export default function DriverActiveRides() {
   const [activeRides, setActiveRides] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { showAlert } = useGlobalAlert();
 
-  const fetchActiveRides = async () => {
+  const loadActiveRides = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
+      const driverId = session.user.id;
 
-      // DBMS JOIN: Fetching the ride, linking through assignments to get the request details
-      const { data: rides, error } = await supabase
+      // 1. Fetch the Ongoing Ride for this driver
+      const { data: rides, error: rErr } = await supabase
         .from('rides')
-        .select(`
-          ride_id,
-          ride_status,
-          final_fare,
-          ride_assignments (
-            request_id,
-            ride_requests (
-              pickup_location,
-              destination,
-              seats_required,
-              rider_id
-            )
-          )
-        `)
-        .eq('driver_id', session.user.id)
-        .eq('ride_status', 'ongoing');
+        .select('*')
+        .eq('driver_id', driverId)
+        .eq('ride_status', 'ongoing')
+        .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setActiveRides(rides || []);
-    } catch (error) {
-      Alert.alert('Error', 'Could not load active rides');
+      if (rErr) throw rErr;
+
+      // 2. Fetch the associated passengers (requests) for each ride
+      const formattedRides = [];
+      for (const ride of (rides || [])) {
+        const { data: assignments } = await supabase
+          .from('ride_assignments')
+          .select('request_id')
+          .eq('ride_id', ride.ride_id);
+
+        const reqIds = assignments.map(a => a.request_id);
+        
+        const { data: requests } = await supabase
+          .from('ride_requests')
+          .select('*')
+          .in('request_id', reqIds);
+
+        formattedRides.push({
+          ...ride,
+          passengers: requests || [],
+        });
+      }
+
+      setActiveRides(formattedRides);
+    } catch (err) {
+      showAlert('Error', 'Could not load your active rides.', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchActiveRides();
-  }, []);
+  // 🚨 This forces the page to refresh concurrently every time the tab is opened!
+  useFocusEffect(
+    useCallback(() => {
+      loadActiveRides();
+    }, [])
+  );
 
-  const completeRide = async (rideId, assignments) => {
-    Alert.alert("Complete Ride", "Mark this ride as finished?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Yes, Complete",
-        onPress: async () => {
-          setLoading(true);
-          try {
-            const requestIds = assignments.map(a => a.request_id);
+  const completeRide = async (rideId, passengers) => {
+    setLoading(true);
+    try {
+      // 1. Mark the main ride as completed
+      const { error: rideErr } = await supabase
+        .from('rides')
+        .update({ ride_status: 'completed' })
+        .eq('ride_id', rideId);
+      if (rideErr) throw rideErr;
 
-            // 1. Update Ride Table
-            await supabase.from('rides').update({ ride_status: 'completed' }).eq('ride_id', rideId);
+      // 2. Mark ALL passenger requests as completed
+      const reqIds = passengers.map(p => p.request_id);
+      const { error: reqErr } = await supabase
+        .from('ride_requests')
+        .update({ request_status: 'completed' })
+        .in('request_id', reqIds);
+      if (reqErr) throw reqErr;
 
-            // 2. Update Request Table (Triggers Rider Payment)
-            await supabase.from('ride_requests').update({ request_status: 'completed' }).in('request_id', requestIds);
-
-            Alert.alert("Success", "Ride completed! Riders can now pay.");
-            fetchActiveRides();
-          } catch (error) {
-            Alert.alert("Error", "Failed to update database.");
-          } finally {
-            setLoading(false);
-          }
-        }
-      }
-    ]);
+      showAlert('Ride Completed!', 'The riders have been billed.', 'success', () => {
+        loadActiveRides(); // Refresh the list
+      });
+      
+    } catch (err) {
+      showAlert('Completion Error', 'Could not complete the ride.', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const renderRide = ({ item }) => {
+    const totalSeats = item.passengers.reduce((sum, p) => sum + p.seats_required, 0);
+
     return (
-      <BlurView intensity={80} tint="dark" style={styles.rideCard}>
-        <View style={styles.header}>
-          <View style={styles.badge}><Text style={styles.badgeText}>ONGOING</Text></View>
+      <View style={styles.card}>
+        {/* Header */}
+        <View style={styles.cardHeader}>
+          <View style={styles.statusBadge}>
+            <Text style={styles.statusText}>ONGOING</Text>
+          </View>
           <Text style={styles.fareText}>Total: ₹{item.final_fare}</Text>
         </View>
 
-        {item.ride_assignments.map((assignment, index) => {
-          const req = assignment.ride_requests;
-          return (
-            <View key={index} style={styles.passengerRow}>
-              <Ionicons name="person-circle-outline" size={24} color="#94A3B8" />
-              <View style={styles.routeBox}>
-                <Text style={styles.routeText} numberOfLines={1}>{req.pickup_location}</Text>
-                <Ionicons name="arrow-down" size={12} color="#7C3AED" style={{ paddingVertical: 2 }} />
-                <Text style={styles.routeText} numberOfLines={1}>{req.destination}</Text>
-              </View>
-              <Text style={styles.seatsText}>{req.seats_required} Seat(s)</Text>
+        {/* Dynamic Passenger List */}
+        {item.passengers.map((passenger, index) => (
+          <View key={passenger.request_id} style={styles.passengerRow}>
+            <Ionicons name="person-circle" size={32} color="#64748B" />
+            <View style={styles.passengerDetails}>
+              <Text style={styles.routeText} numberOfLines={1}>{passenger.pickup_location}</Text>
+              <Ionicons name="arrow-down" size={14} color="#7C3AED" style={{ marginVertical: 2 }} />
+              <Text style={styles.routeText} numberOfLines={1}>{passenger.destination}</Text>
             </View>
-          );
-        })}
+            <Text style={styles.seatText}>{passenger.seats_required} Seat(s)</Text>
+          </View>
+        ))}
 
-        <TouchableOpacity style={styles.completeBtn} onPress={() => completeRide(item.ride_id, item.ride_assignments)}>
-          <Ionicons name="checkmark-done-circle-outline" size={20} color="#FFF" />
+        <View style={styles.divider} />
+
+        {/* Complete Button */}
+        <TouchableOpacity 
+          style={styles.completeBtn} 
+          onPress={() => completeRide(item.ride_id, item.passengers)}
+        >
+          <Ionicons name="checkmark-done-circle" size={20} color="#052E16" style={{ marginRight: 8 }} />
           <Text style={styles.completeBtnText}>Mark as Completed</Text>
         </TouchableOpacity>
-      </BlurView>
+      </View>
     );
   };
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.headerBar}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.replace('/(tabs)/driver-home')} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
         <Text style={styles.title}>Active Rides</Text>
+        <View style={{ width: 40 }} />
       </View>
 
       {loading ? (
-        <ActivityIndicator size="large" color="#7C3AED" style={{ marginTop: 50 }} />
+        <ActivityIndicator size="large" color="#10B981" style={{ flex: 1 }} />
       ) : (
         <FlatList
           data={activeRides}
-          keyExtractor={(item) => item.ride_id}
           renderItem={renderRide}
+          keyExtractor={(item) => item.ride_id}
           contentContainerStyle={styles.listContainer}
-          ListEmptyComponent={<Text style={styles.emptyText}>No ongoing rides right now.</Text>}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Ionicons name="car-outline" size={64} color="#1E293B" style={{ marginBottom: 20 }} />
+              <Text style={styles.emptyText}>You have no active rides.</Text>
+            </View>
+          }
         />
       )}
     </SafeAreaView>
@@ -134,20 +172,27 @@ export default function DriverActiveRides() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0B1120' },
-  headerBar: { flexDirection: 'row', alignItems: 'center', padding: 20 },
-  backBtn: { marginRight: 15, backgroundColor: '#1E293B', padding: 8, borderRadius: 10 },
-  title: { fontSize: 24, fontWeight: '800', color: '#F8FAFC' },
-  listContainer: { padding: 20 },
-  rideCard: { borderRadius: 20, padding: 20, marginBottom: 20, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(124, 58, 237, 0.2)' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  badge: { backgroundColor: 'rgba(124, 58, 237, 0.2)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
-  badgeText: { color: '#A78BFA', fontWeight: 'bold', fontSize: 12 },
-  fareText: { color: '#10B981', fontSize: 18, fontWeight: '900' },
-  passengerRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(15, 23, 42, 0.6)', padding: 12, borderRadius: 12, marginBottom: 10 },
-  routeBox: { flex: 1, marginLeft: 12 },
-  routeText: { color: '#F1F5F9', fontSize: 14, fontWeight: '500' },
-  seatsText: { color: '#94A3B8', fontSize: 12, fontWeight: 'bold' },
-  completeBtn: { backgroundColor: '#10B981', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 15, borderRadius: 15, marginTop: 10 },
-  completeBtnText: { color: '#FFF', fontSize: 16, fontWeight: 'bold', marginLeft: 8 },
-  emptyText: { color: '#94A3B8', textAlign: 'center', marginTop: 50, fontSize: 16 }
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20 },
+  backBtn: { backgroundColor: '#1E293B', padding: 10, borderRadius: 12 },
+  title: { fontSize: 22, fontWeight: '900', color: '#F8FAFC' },
+  listContainer: { padding: 20, paddingBottom: 40 },
+  
+  card: { backgroundColor: '#1E293B', borderRadius: 24, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: 'rgba(16, 185, 129, 0.2)' },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  statusBadge: { backgroundColor: 'rgba(124, 58, 237, 0.15)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  statusText: { color: '#A78BFA', fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
+  fareText: { color: '#10B981', fontSize: 20, fontWeight: '900' },
+  
+  passengerRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(15, 23, 42, 0.4)', padding: 12, borderRadius: 16, marginBottom: 12 },
+  passengerDetails: { flex: 1, marginLeft: 12 },
+  routeText: { color: '#F1F5F9', fontSize: 14, fontWeight: '600' },
+  seatText: { color: '#94A3B8', fontSize: 13, fontWeight: '700' },
+  
+  divider: { height: 1, backgroundColor: 'rgba(255,255,255,0.05)', marginVertical: 16 },
+  
+  completeBtn: { backgroundColor: '#10B981', height: 56, borderRadius: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  completeBtnText: { color: '#052E16', fontSize: 16, fontWeight: '800' },
+  
+  emptyState: { alignItems: 'center', marginTop: 100 },
+  emptyText: { color: '#64748B', fontSize: 16, textAlign: 'center' },
 });

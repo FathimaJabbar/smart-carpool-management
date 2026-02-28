@@ -24,9 +24,11 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
+import { useGlobalAlert } from '@/components/GlobalAlert';
 
 export default function Index() {
   const router = useRouter();
+  const { showAlert } = useGlobalAlert();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -52,7 +54,7 @@ export default function Index() {
 
 const handleLogin = async () => {
   if (!email.trim() || !password.trim()) {
-    Alert.alert('Error', 'Please enter email and password');
+    showAlert('Error', 'Please enter email and password', 'error');
     return;
   }
 
@@ -66,13 +68,13 @@ const handleLogin = async () => {
     });
 
     if (error) {
-      Alert.alert('Login Failed', error.message);
+      showAlert('Login Failed', error.message, 'error');
       return;
     }
 
     const user = data.user;
     if (!user) {
-      Alert.alert('Error', 'User not found');
+      showAlert('Error', 'User not found', 'error');
       return;
     }
 
@@ -92,7 +94,7 @@ const handleLogin = async () => {
     }
 
   } catch (err) {
-    Alert.alert('Login Failed', 'Something went wrong');
+    showAlert('Login Failed', 'Something went wrong', 'error');
   } finally {
     setLoading(false);
   }

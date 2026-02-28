@@ -1,16 +1,19 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
+import { useGlobalAlert } from '@/components/GlobalAlert'; // <-- Imported Global Alert
 
 export default function Payment() {
   const { requestId, fare, pickup, destination } = useLocalSearchParams();
   const [loading, setLoading] = useState(false);
   const [rideId, setRideId] = useState(null);
+  
+  const { showAlert } = useGlobalAlert(); // <-- Initialized Hook
 
-  // Fallback check: If fare came in as 0 or undefined, default to 50 for the demo to prevent breaking
+  // Fallback check: If fare came in as 0 or undefined, default to 50
   const amountToPay = Number(fare) > 0 ? Number(fare) : 50;
 
   useEffect(() => {
@@ -41,7 +44,7 @@ export default function Payment() {
 
       if (payError) throw payError;
 
-      // 2. IMPORTANT: Update the ride request to 'paid' so the Pay button disappears!
+      // 2. Update the ride request to 'paid'
       const { error: updateErr } = await supabase
         .from('ride_requests')
         .update({ request_status: 'paid' })
@@ -49,11 +52,13 @@ export default function Payment() {
         
       if (updateErr) throw updateErr;
 
-      Alert.alert("Payment Success", `₹${amountToPay} paid successfully!`, [
-        { text: "Awesome", onPress: () => router.replace('/(tabs)/rider-home') }
-      ]);
-    } catch (err) {
-      Alert.alert("Payment Failed", err.message);
+      // Premium Success Alert with Redirect Callback
+      showAlert("Payment Success", `₹${amountToPay} paid successfully!`, "success", () => {
+        router.replace('/(tabs)/rider-home');
+      });
+
+    } catch (err: any) {
+      showAlert("Payment Failed", err.message, "error");
     } finally {
       setLoading(false);
     }
@@ -61,6 +66,14 @@ export default function Payment() {
 
   return (
     <SafeAreaView style={styles.safe}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Ionicons name="arrow-back" size={24} color="#FFF" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Checkout</Text>
+        <View style={{ width: 40 }} />
+      </View>
+
       <View style={styles.container}>
         <View style={styles.card}>
           <View style={styles.iconCircle}>
@@ -91,10 +104,6 @@ export default function Payment() {
               </>
             )}
           </TouchableOpacity>
-          
-          <Text style={styles.secureText}>
-            <Ionicons name="lock-closed" size={12} color="#94A3B8" /> Secure Demo Transaction
-          </Text>
         </View>
       </View>
     </SafeAreaView>
@@ -103,7 +112,10 @@ export default function Payment() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0B1120' },
-  container: { flex: 1, justifyContent: 'center', padding: 24 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20 },
+  backBtn: { backgroundColor: '#1E293B', padding: 10, borderRadius: 12 },
+  headerTitle: { fontSize: 22, fontWeight: '900', color: '#F8FAFC' },
+  container: { flex: 1, justifyContent: 'center', padding: 24, paddingBottom: 60 },
   card: { backgroundColor: '#1E293B', borderRadius: 32, padding: 32, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(16, 185, 129, 0.2)' },
   iconCircle: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(16, 185, 129, 0.1)', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
   title: { color: '#94A3B8', fontSize: 16, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
@@ -112,6 +124,5 @@ const styles = StyleSheet.create({
   infoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 30, backgroundColor: 'rgba(15, 23, 42, 0.5)', padding: 16, borderRadius: 16 },
   infoText: { color: '#F1F5F9', fontSize: 15, marginLeft: 12, flex: 1, fontWeight: '600' },
   payBtn: { backgroundColor: '#10B981', width: '100%', height: 64, borderRadius: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', shadowColor: '#10B981', shadowOpacity: 0.3, shadowRadius: 10, elevation: 8 },
-  payBtnText: { color: '#FFF', fontSize: 18, fontWeight: '800' },
-  secureText: { color: '#64748B', fontSize: 12, marginTop: 24, fontWeight: '600' },
+  payBtnText: { color: '#052E16', fontSize: 18, fontWeight: '800' },git 
 });

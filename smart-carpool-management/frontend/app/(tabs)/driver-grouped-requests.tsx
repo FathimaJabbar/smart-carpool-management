@@ -6,17 +6,22 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 
+// Make sure this matches exactly how Copilot exported your hook!
+import { useGlobalAlert } from '@/components/GlobalAlert'; 
+
 export default function DriverGroupedRequests() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [driverId, setDriverId] = useState(null);
+
+  // 1. FIX: Call the hook at the top level of the component!
+  const { showAlert } = useGlobalAlert(); 
 
   const RIDER_SHARE = 0.6; // Carpool discount factor
 
@@ -37,7 +42,7 @@ export default function DriverGroupedRequests() {
       if (error) throw error;
       setRequests(pendingRequests || []);
     } catch (err) {
-      Alert.alert("Database Error", "Failed to load requests.");
+      showAlert('Database Error', 'Failed to load requests.', 'error');
     } finally {
       setLoading(false);
     }
@@ -56,13 +61,13 @@ export default function DriverGroupedRequests() {
         .single();
 
       if (vErr || !vehicle) {
-        Alert.alert("No Vehicle", "Please add a vehicle to your profile first.");
+        showAlert('No Vehicle', 'Please add a vehicle to your profile first.', 'error');
         return;
       }
 
       // Check if this single request is bigger than the whole car
       if (request.seats_required > vehicle.seating_capacity) {
-        Alert.alert("Too Many People", `Your ${vehicle.vehicle_model} only holds ${vehicle.seating_capacity} people.`);
+        showAlert('Too Many People', `Your ${vehicle.vehicle_model} only holds ${vehicle.seating_capacity} people.`, 'error');
         return;
       }
 
@@ -82,16 +87,32 @@ export default function DriverGroupedRequests() {
         targetRideId = activeRide.ride_id;
         currentFare = activeRide.final_fare || 0;
 
-        // DBMS LOGIC: Calculate currently occupied seats
+        // --- NEW LOGIC: ROUTE MISMATCH CONSTRAINT ---
+        // Let's check where the current passengers in the car are going!
         const { data: assignments } = await supabase.from('ride_assignments').select('request_id').eq('ride_id', targetRideId);
-        const reqIds = assignments.map(a => a.request_id);
         
+        if (assignments && assignments.length > 0) {
+          const firstReqId = assignments[0].request_id;
+          const { data: existingReq } = await supabase.from('ride_requests').select('destination').eq('request_id', firstReqId).single();
+          
+          // If the new request's destination doesn't match the car's current destination, BLOCK IT!
+          if (existingReq && existingReq.destination.trim().toLowerCase() !== request.destination.trim().toLowerCase()) {
+            showAlert(
+              'Route Mismatch', 
+              `Your current carpool is heading to ${existingReq.destination}. You cannot add passengers going to ${request.destination}.`, 
+              'error'
+            );
+            return;
+          }
+        }
+
+        // --- EXISTING LOGIC: CAPACITY CHECK ---
+        const reqIds = assignments.map(a => a.request_id);
         const { data: acceptedReqs } = await supabase.from('ride_requests').select('seats_required').in('request_id', reqIds);
         const occupiedSeats = acceptedReqs.reduce((sum, r) => sum + r.seats_required, 0);
 
-        // Check if adding these new passengers exceeds remaining capacity
         if (occupiedSeats + request.seats_required > vehicle.seating_capacity) {
-          Alert.alert("Car is Full!", `You only have ${vehicle.seating_capacity - occupiedSeats} seat(s) left in your current carpool.`);
+          showAlert('Car is Full!', `You only have ${vehicle.seating_capacity - occupiedSeats} seat(s) left in your current carpool.`, 'error');
           return;
         }
 
@@ -118,13 +139,12 @@ export default function DriverGroupedRequests() {
       await supabase.from('ride_assignments').insert({ ride_id: targetRideId, request_id: request.request_id });
       await supabase.from('ride_requests').update({ request_status: 'accepted' }).eq('request_id', request.request_id);
 
-      Alert.alert("Added to Carpool!", "You have accepted this request.", [
-        { text: "View Active Rides", onPress: () => router.replace('/(tabs)/driver-active-rides') },
-        { text: "Find More", onPress: () => loadRequests() }
-      ]);
+      showAlert("Added to Carpool!", "You have accepted this request.", "success", () => {
+        router.replace('/(tabs)/driver-active-rides');
+      });
       
     } catch (e: any) {
-      Alert.alert("Error", e.message);
+      showAlert("Error", e.message, "error");
     } finally {
       setLoading(false);
     }

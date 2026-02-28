@@ -6,12 +6,12 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { useGlobalAlert } from '@/components/GlobalAlert';
 
 export default function DriverHome() {
   const [driverName, setDriverName] = useState('Driver');
@@ -44,18 +44,18 @@ export default function DriverHome() {
     }, [])
   );
 
+  const { showAlert } = useGlobalAlert();
+
   const handleLogout = async () => {
-    Alert.alert("Logout", "Are you sure you want to log out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Logout",
-        style: "destructive",
-        onPress: async () => {
-          await supabase.auth.signOut();
-          router.replace('/(auth)/login');
-        },
-      },
-    ]);
+    showAlert(
+      'Logout',
+      'Are you sure you want to log out?',
+      'info',
+      async () => {
+        await supabase.auth.signOut();
+        router.replace('/(auth)/login');
+      }
+    );
   };
 
   return (
