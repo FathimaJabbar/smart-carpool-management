@@ -14,8 +14,15 @@ export default function TabLayout() {
         tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         headerShown: false,
         tabBarButton: HapticTab,
-        tabBarStyle: { backgroundColor: '#0B1120', borderTopColor: 'rgba(255,255,255,0.1)' },
+        tabBarStyle: { 
+          backgroundColor: '#0B1120', 
+          borderTopWidth: 1,
+          borderTopColor: 'rgba(255,255,255,0.05)',
+          elevation: 0,
+        },
       }}>
+      
+      {/* Visible Tabs */}
       <Tabs.Screen
         name="index"
         options={{
@@ -30,14 +37,17 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
         }}
       />
-      {/* Hidden Screens - using both href and display:none to be completely safe */}
+
+      {/* Hidden Screens (Accessible via router.push but not in the bottom bar) */}
       <Tabs.Screen name="create-request" options={{ href: null, tabBarItemStyle: { display: 'none' } }} />
       <Tabs.Screen name="payment" options={{ href: null, tabBarItemStyle: { display: 'none' } }} />
-      <Tabs.Screen name="driver-active-rides" options={{ href: null, tabBarItemStyle: { display: 'none' } }} />
-      <Tabs.Screen name="driver-request" options={{ href: null, tabBarItemStyle: { display: 'none' } }} />
-      <Tabs.Screen name="driver-earnings" options={{ href: null, tabBarItemStyle: { display: 'none' } }} />
       <Tabs.Screen name="rider-home" options={{ href: null, tabBarItemStyle: { display: 'none' } }} />
+      
+      {/* Driver Hidden Screens - MAKE SURE YOUR FILE NAMES MATCH THESE EXACTLY */}
       <Tabs.Screen name="driver-home" options={{ href: null, tabBarItemStyle: { display: 'none' } }} />
+      <Tabs.Screen name="driver-grouped-requests" options={{ href: null, tabBarItemStyle: { display: 'none' } }} />
+      <Tabs.Screen name="driver-active-rides" options={{ href: null, tabBarItemStyle: { display: 'none' } }} />
+      <Tabs.Screen name="driver-earnings" options={{ href: null, tabBarItemStyle: { display: 'none' } }} />
     </Tabs>
   );
 }

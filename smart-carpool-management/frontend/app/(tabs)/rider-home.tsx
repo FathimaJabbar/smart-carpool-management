@@ -1,5 +1,4 @@
-// app/(tabs)/rider-home.tsx
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,56 +12,75 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '@/lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 
 export default function RiderHome() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [userId, setUserId] = useState(null);
+  const [userName, setUserName] = useState('Rider');
 
-  const loadRequests = useCallback(async () => {
-    setLoading(true);
-    setRefreshing(true);
-
+  const loadRequests = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user?.id) {
-        Alert.alert("Error", "Not logged in");
+      if (!session?.user) {
         router.replace('/(auth)/login');
         return;
       }
-      setUserId(session.user.id);
 
+      // Fetch user name for header
+      const { data: profile } = await supabase
+        .from('riders')
+        .select('name')
+        .eq('rider_id', session.user.id)
+        .single();
+      
+      if (profile?.name) setUserName(profile.name.split(' ')[0]);
+
+      // Fetch requests
       const { data, error } = await supabase
         .from('ride_requests')
         .select('*')
         .eq('rider_id', session.user.id)
-        .order('created_at', { ascending: false })
-        .limit(15);
+        .order('created_at', { ascending: false });
 
       if (error) throw error;
-
       setRequests(data || []);
     } catch (err) {
-      console.error("Load requests error:", err);
-      Alert.alert("Error", "Failed to load your ride requests.");
+      console.error(err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  };
 
-  useEffect(() => {
-    loadRequests();
-  }, [loadRequests]);
+  // useFocusEffect automatically reloads data when you come back from the Payment screen!
+  useFocusEffect(
+    useCallback(() => {
+      loadRequests();
+    }, [])
+  );
+
+  const handleLogout = async () => {
+    Alert.alert("Logout", "Are you sure you want to log out?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Logout", style: "destructive", onPress: async () => {
+          await supabase.auth.signOut();
+          router.replace('/(auth)/login');
+        }
+      }
+    ]);
+  };
 
   const goToPayment = (request) => {
+    // Fallback to ₹50 just in case it's an old record with no fare
+    const fareToPass = request.estimated_fare > 0 ? request.estimated_fare : 50; 
+    
     router.push({
       pathname: '/(tabs)/payment',
       params: {
         requestId: request.request_id,
-        fare: request.estimated_fare || 0,
+        fare: fareToPass,
         pickup: request.pickup_location,
         destination: request.destination,
       },
@@ -71,79 +89,89 @@ export default function RiderHome() {
 
   const renderRequest = ({ item }) => {
     const status = item.request_status.toLowerCase();
-    const isPending = status === 'pending';
-    const isAccepted = status === 'accepted' || status === 'paid_pending';
     const isCompleted = status === 'completed';
     const isPaid = status === 'paid';
+    
+    // Status colors
+    let statusColor = '#EF4444'; // Red for pending
+    if (status === 'accepted') statusColor = '#3B82F6'; // Blue for accepted
+    if (isCompleted || isPaid) statusColor = '#10B981'; // Green for done
 
-    let statusColor = '#EF4444'; // default red
-    if (isAccepted || isCompleted || isPaid) statusColor = '#10B981'; // green
+    // Format the ugly date string into a pretty one!
+    const dateObj = new Date(item.ride_date || item.created_at);
+    const prettyDate = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
     return (
-      <View style={styles.requestCard}>
-        {/* Route */}
-        <View style={styles.routeRow}>
-          <Ionicons name="location-sharp" size={22} color="#7C3AED" />
-          <Text style={styles.route}>
-            {item.pickup_location || 'Pickup'} → {item.destination || 'Destination'}
+      <View style={styles.card}>
+        {/* Card Header: Date & Status */}
+        <View style={styles.cardHeader}>
+          <Text style={styles.dateText}>{prettyDate}</Text>
+          <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
+            <Text style={[styles.statusText, { color: statusColor }]}>
+              {status.toUpperCase()}
+            </Text>
+          </View>
+        </View>
+
+        {/* Route Details */}
+        <View style={styles.routeContainer}>
+          <Ionicons name="location" size={20} color="#7C3AED" />
+          <Text style={styles.routeText} numberOfLines={1}>
+            {item.pickup_location} <Text style={{color: '#64748B'}}>→</Text> {item.destination}
           </Text>
         </View>
 
-        {/* Details row */}
-        <View style={styles.detailsRow}>
-          <Text style={styles.detail}>
-            Date: {item.ride_date || new Date(item.created_at).toLocaleDateString()}
+        {/* Footer: Seats & Action Buttons */}
+        <View style={styles.cardFooter}>
+          <Text style={styles.seatsText}>
+            <Ionicons name="people" size={14} /> {item.seats_required} Seat(s)
           </Text>
-          <Text style={[styles.status, { color: statusColor }]}>
-            {item.request_status.toUpperCase()}
-          </Text>
-          <Text style={styles.detail}>
-            Seats: {item.seats_required}
-          </Text>
-        </View>
 
-        {/* Action area - fixed height to prevent jump */}
-        <View style={styles.actionArea}>
           {isCompleted && !isPaid && (
-            <TouchableOpacity style={styles.payButton} onPress={() => goToPayment(item)}>
-              <Text style={styles.payText}>Pay Now</Text>
+            <TouchableOpacity style={styles.payBtn} onPress={() => goToPayment(item)}>
+              <Text style={styles.payBtnText}>Pay Now</Text>
             </TouchableOpacity>
           )}
 
           {isPaid && (
             <View style={styles.paidBadge}>
-              <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-              <Text style={styles.paidText}>Paid ✓</Text>
+              <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+              <Text style={styles.paidText}>Paid</Text>
             </View>
-          )}
-
-          {isPending && (
-            <Text style={styles.waitingText}>Waiting for a driver to accept...</Text>
-          )}
-
-          {isAccepted && !isCompleted && (
-            <Text style={styles.waitingText}>Ride accepted — waiting for completion</Text>
           )}
         </View>
       </View>
     );
   };
 
+  if (loading && !refreshing) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <ActivityIndicator size="large" color="#7C3AED" style={{ flex: 1 }} />
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safe}>
-      <Text style={styles.title}>Your Ride Requests</Text>
+      {/* Sleek Top Header */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.greeting}>Hello, {userName}</Text>
+          <Text style={styles.subGreeting}>Your Ride Requests</Text>
+        </View>
+        <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn}>
+          <Ionicons name="log-out-outline" size={24} color="#EF4444" />
+        </TouchableOpacity>
+      </View>
 
-      {loading && !refreshing ? (
-        <ActivityIndicator size="large" color="#7C3AED" style={{ flex: 1 }} />
-      ) : requests.length === 0 ? (
+      {requests.length === 0 ? (
         <View style={styles.emptyContainer}>
+          <Ionicons name="car-outline" size={80} color="#1E293B" style={{marginBottom: 20}} />
           <Text style={styles.emptyText}>No ride requests yet</Text>
-          <TouchableOpacity
-            style={styles.newButtonSmall}
-            onPress={() => router.push('/(tabs)/create-request')}
-          >
-            <Ionicons name="add-circle-outline" size={24} color="#fff" />
-            <Text style={styles.newButtonTextSmall}>Create New Request</Text>
+          <TouchableOpacity style={styles.createBtn} onPress={() => router.push('/(tabs)/create-request')}>
+            <Ionicons name="add-circle" size={24} color="#FFF" style={{marginRight: 8}} />
+            <Text style={styles.createBtnText}>Create New Request</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -151,148 +179,44 @@ export default function RiderHome() {
           data={requests}
           renderItem={renderRequest}
           keyExtractor={item => item.request_id}
-          contentContainerStyle={{ paddingBottom: 120 }}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={loadRequests}
-              tintColor="#7C3AED"
-            />
-          }
+          contentContainerStyle={styles.listContainer}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadRequests(); }} tintColor="#7C3AED" />}
         />
       )}
 
-      {/* Floating action button */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => router.push('/(tabs)/create-request')}
-      >
-        <Ionicons name="add" size={32} color="#fff" />
-      </TouchableOpacity>
+      {/* Only show floating + button if list is NOT empty */}
+      {requests.length > 0 && (
+        <TouchableOpacity style={styles.fab} onPress={() => router.push('/(tabs)/create-request')}>
+          <Ionicons name="add" size={32} color="#fff" />
+        </TouchableOpacity>
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0B1120' },
-  title: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#F8FAFC',
-    textAlign: 'center',
-    marginVertical: 20,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-  },
-  emptyText: {
-    color: '#94A3B8',
-    fontSize: 18,
-    textAlign: 'center',
-    marginBottom: 32,
-  },
-  newButtonSmall: {
-    flexDirection: 'row',
-    backgroundColor: '#7C3AED',
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 16,
-    alignItems: 'center',
-  },
-  newButtonTextSmall: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-    marginLeft: 12,
-  },
-  requestCard: {
-    backgroundColor: '#1E293B',
-    borderRadius: 16,
-    padding: 16,
-    marginHorizontal: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(124, 58, 237, 0.15)',
-  },
-  routeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  route: {
-    color: '#F8FAFC',
-    fontSize: 17,
-    fontWeight: '700',
-    marginLeft: 10,
-    flex: 1,
-  },
-  detailsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  detail: {
-    color: '#94A3B8',
-    fontSize: 14,
-  },
-  status: {
-    fontWeight: '700',
-  },
-  actionArea: {
-    minHeight: 48,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  payButton: {
-    backgroundColor: '#10B981',
-    paddingVertical: 12,
-    paddingHorizontal: 40,
-    borderRadius: 12,
-    width: '70%',
-    alignItems: 'center',
-  },
-  payText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  paidBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-  },
-  paidText: {
-    color: '#10B981',
-    fontSize: 16,
-    fontWeight: '700',
-    marginLeft: 8,
-  },
-  waitingText: {
-    color: '#94A3B8',
-    fontSize: 14,
-    fontStyle: 'italic',
-    textAlign: 'center',
-  },
-  fab: {
-    position: 'absolute',
-    bottom: 24,
-    right: 24,
-    backgroundColor: '#7C3AED',
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#7C3AED',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 8,
-  },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, paddingBottom: 10 },
+  greeting: { fontSize: 28, fontWeight: '900', color: '#F8FAFC' },
+  subGreeting: { fontSize: 16, color: '#94A3B8', marginTop: 4 },
+  logoutBtn: { backgroundColor: 'rgba(239, 68, 68, 0.1)', padding: 10, borderRadius: 12 },
+  listContainer: { padding: 20, paddingBottom: 100 },
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
+  emptyText: { color: '#64748B', fontSize: 18, marginBottom: 30 },
+  createBtn: { flexDirection: 'row', backgroundColor: '#7C3AED', paddingVertical: 16, paddingHorizontal: 24, borderRadius: 16, alignItems: 'center' },
+  createBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
+  card: { backgroundColor: '#1E293B', borderRadius: 20, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(124, 58, 237, 0.15)' },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  dateText: { color: '#94A3B8', fontSize: 14, fontWeight: '600' },
+  statusBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
+  statusText: { fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
+  routeContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, backgroundColor: 'rgba(15, 23, 42, 0.5)', padding: 12, borderRadius: 12 },
+  routeText: { color: '#F8FAFC', fontSize: 16, fontWeight: '700', marginLeft: 10, flex: 1 },
+  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  seatsText: { color: '#64748B', fontSize: 14, fontWeight: '700' },
+  payBtn: { backgroundColor: '#10B981', paddingVertical: 10, paddingHorizontal: 24, borderRadius: 12 },
+  payBtnText: { color: '#FFF', fontWeight: '800', fontSize: 14 },
+  paidBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(16, 185, 129, 0.15)', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 12 },
+  paidText: { color: '#10B981', fontWeight: '800', marginLeft: 6 },
+  fab: { position: 'absolute', bottom: 30, right: 30, backgroundColor: '#7C3AED', width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center', shadowColor: '#7C3AED', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 8, elevation: 8 },
 });
